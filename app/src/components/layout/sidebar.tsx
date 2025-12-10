@@ -699,7 +699,7 @@ export function Sidebar() {
             </button>
             <button
               onClick={() => setShowTrashDialog(true)}
-              className="group flex items-center justify-center px-3 py-2.5 rounded-lg relative overflow-hidden transition-all text-muted-foreground hover:text-primary hover:bg-destructive/10 border border-sidebar-border"
+              className="group flex items-center justify-center px-3 h-[42px] rounded-lg relative overflow-hidden transition-all text-muted-foreground hover:text-primary hover:bg-destructive/10 border border-sidebar-border"
               title="Trash"
               data-testid="trash-button"
             >
@@ -778,7 +778,7 @@ export function Sidebar() {
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <button
-                    className="hidden lg:flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-sidebar-accent/50 border border-sidebar-border transition-all titlebar-no-drag"
+                    className="hidden lg:flex items-center justify-center w-8 h-[42px] rounded-lg text-muted-foreground hover:text-foreground hover:bg-sidebar-accent/50 border border-sidebar-border transition-all titlebar-no-drag"
                     title="Project history"
                     data-testid="project-history-menu"
                   >

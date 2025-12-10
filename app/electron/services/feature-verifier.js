@@ -12,11 +12,17 @@ class FeatureVerifier {
    * Verify feature tests (runs tests and checks if they pass)
    */
   async verifyFeatureTests(feature, projectPath, sendToRenderer, execution) {
-    console.log(`[FeatureVerifier] Verifying tests for: ${feature.description}`);
+    console.log(
+      `[FeatureVerifier] Verifying tests for: ${feature.description}`
+    );
 
     try {
       const verifyMsg = `\n✅ Verifying tests for: ${feature.description}\n`;
-      await contextManager.writeToContextFile(projectPath, feature.id, verifyMsg);
+      await contextManager.writeToContextFile(
+        projectPath,
+        feature.id,
+        verifyMsg
+      );
 
       sendToRenderer({
         type: "auto_mode_phase",
@@ -36,13 +42,21 @@ class FeatureVerifier {
 
       const options = {
         model: "claude-opus-4-5-20251101",
-        systemPrompt: promptBuilder.getVerificationPrompt(),
+        systemPrompt: await promptBuilder.getVerificationPrompt(projectPath),
         maxTurns: 1000,
         cwd: projectPath,
         mcpServers: {
-          "automaker-tools": featureToolsServer
+          "automaker-tools": featureToolsServer,
         },
-        allowedTools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "mcp__automaker-tools__UpdateFeatureStatus"],
+        allowedTools: [
+          "Read",
+          "Write",
+          "Edit",
+          "Glob",
+          "Grep",
+          "Bash",
+          "mcp__automaker-tools__UpdateFeatureStatus",
+        ],
         permissionMode: "acceptEdits",
         sandbox: {
           enabled: true,
@@ -51,11 +65,18 @@ class FeatureVerifier {
         abortController: abortController,
       };
 
-      const prompt = promptBuilder.buildVerificationPrompt(feature);
+      const prompt = await promptBuilder.buildVerificationPrompt(
+        feature,
+        projectPath
+      );
 
       const runningTestsMsg =
         "Running Playwright tests to verify feature implementation...\n";
-      await contextManager.writeToContextFile(projectPath, feature.id, runningTestsMsg);
+      await contextManager.writeToContextFile(
+        projectPath,
+        feature.id,
+        runningTestsMsg
+      );
 
       sendToRenderer({
         type: "auto_mode_progress",
@@ -76,7 +97,11 @@ class FeatureVerifier {
             if (block.type === "text") {
               responseText += block.text;
 
-              await contextManager.writeToContextFile(projectPath, feature.id, block.text);
+              await contextManager.writeToContextFile(
+                projectPath,
+                feature.id,
+                block.text
+              );
 
               sendToRenderer({
                 type: "auto_mode_progress",
@@ -85,7 +110,11 @@ class FeatureVerifier {
               });
             } else if (block.type === "tool_use") {
               const toolMsg = `\n🔧 Tool: ${block.name}\n`;
-              await contextManager.writeToContextFile(projectPath, feature.id, toolMsg);
+              await contextManager.writeToContextFile(
+                projectPath,
+                feature.id,
+                toolMsg
+              );
 
               sendToRenderer({
                 type: "auto_mode_tool",
@@ -105,14 +134,20 @@ class FeatureVerifier {
       const updatedFeatures = await featureLoader.loadFeatures(projectPath);
       const updatedFeature = updatedFeatures.find((f) => f.id === feature.id);
       // For skipTests features, waiting_approval is also considered a success
-      const passes = updatedFeature?.status === "verified" || 
-                     (updatedFeature?.skipTests && updatedFeature?.status === "waiting_approval");
+      const passes =
+        updatedFeature?.status === "verified" ||
+        (updatedFeature?.skipTests &&
+          updatedFeature?.status === "waiting_approval");
 
       const finalMsg = passes
         ? "✓ Verification successful: All tests passed\n"
         : "✗ Tests failed or not all passing - feature remains in progress\n";
 
-      await contextManager.writeToContextFile(projectPath, feature.id, finalMsg);
+      await contextManager.writeToContextFile(
+        projectPath,
+        feature.id,
+        finalMsg
+      );
 
       sendToRenderer({
         type: "auto_mode_progress",

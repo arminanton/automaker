@@ -1,3 +1,5 @@
+const contextManager = require("./context-manager");
+
 /**
  * Prompt Builder - Generates prompts for different agent tasks
  */
@@ -5,16 +7,21 @@ class PromptBuilder {
   /**
    * Build the prompt for implementing a specific feature
    */
-  buildFeaturePrompt(feature) {
+  async buildFeaturePrompt(feature, projectPath) {
     const skipTestsNote = feature.skipTests
       ? `\n**⚠️ IMPORTANT - Manual Testing Mode:**\nThis feature has skipTests=true, which means:\n- DO NOT commit changes automatically\n- DO NOT mark as verified - it will automatically go to "waiting_approval" status\n- The user will manually review and commit the changes\n- Just implement the feature and mark it as verified (it will be converted to waiting_approval)\n`
       : "";
 
     let imagesNote = "";
     if (feature.imagePaths && feature.imagePaths.length > 0) {
-      const imagesList = feature.imagePaths.map((img, idx) =>
-        `   ${idx + 1}. ${img.filename} (${img.mimeType})\n      Path: ${img.path}`
-      ).join("\n");
+      const imagesList = feature.imagePaths
+        .map(
+          (img, idx) =>
+            `   ${idx + 1}. ${img.filename} (${img.mimeType})\n      Path: ${
+              img.path
+            }`
+        )
+        .join("\n");
 
       imagesNote = `\n**📎 Context Images Attached:**\nThe user has attached ${feature.imagePaths.length} image(s) for context. These images are provided both visually (in the initial message) and as files you can read:
 
@@ -23,14 +30,31 @@ ${imagesList}
 You can use the Read tool to view these images at any time during implementation. Review them carefully before implementing.\n`;
     }
 
+    // Get context files preview
+    const contextFilesPreview = await contextManager.getContextFilesPreview(
+      projectPath
+    );
+
+    // Get memory content (lessons learned from previous runs)
+    const memoryContent = await contextManager.getMemoryContent(projectPath);
+
+    // Build mode header for this feature
+    const modeHeader = feature.skipTests
+      ? `**🔨 MODE: Manual Review (No Automated Tests)**
+This feature is set for manual review - focus on clean implementation without automated tests.`
+      : `**🧪 MODE: Test-Driven Development (TDD)**
+This feature requires automated Playwright tests to verify the implementation.`;
+
     return `You are working on a feature implementation task.
 
+${modeHeader}
+${memoryContent}
 **Current Feature to Implement:**
 
 ID: ${feature.id}
 Category: ${feature.category}
 Description: ${feature.description}
-${skipTestsNote}${imagesNote}
+${skipTestsNote}${imagesNote}${contextFilesPreview}
 **Steps to Complete:**
 ${feature.steps.map((step, i) => `${i + 1}. ${step}`).join("\n")}
 
@@ -125,16 +149,21 @@ Begin by reading the project structure and then implementing the feature.`;
   /**
    * Build the prompt for verifying a specific feature
    */
-  buildVerificationPrompt(feature) {
+  async buildVerificationPrompt(feature, projectPath) {
     const skipTestsNote = feature.skipTests
       ? `\n**⚠️ IMPORTANT - Manual Testing Mode:**\nThis feature has skipTests=true, which means:\n- DO NOT commit changes automatically\n- DO NOT mark as verified - it will automatically go to "waiting_approval" status\n- The user will manually review and commit the changes\n- Just implement the feature and mark it as verified (it will be converted to waiting_approval)\n`
       : "";
 
     let imagesNote = "";
     if (feature.imagePaths && feature.imagePaths.length > 0) {
-      const imagesList = feature.imagePaths.map((img, idx) =>
-        `   ${idx + 1}. ${img.filename} (${img.mimeType})\n      Path: ${img.path}`
-      ).join("\n");
+      const imagesList = feature.imagePaths
+        .map(
+          (img, idx) =>
+            `   ${idx + 1}. ${img.filename} (${img.mimeType})\n      Path: ${
+              img.path
+            }`
+        )
+        .join("\n");
 
       imagesNote = `\n**📎 Context Images Attached:**\nThe user has attached ${feature.imagePaths.length} image(s) for context. These images are provided both visually (in the initial message) and as files you can read:
 
@@ -143,7 +172,25 @@ ${imagesList}
 You can use the Read tool to view these images at any time during implementation. Review them carefully before implementing.\n`;
     }
 
+    // Get context files preview
+    const contextFilesPreview = await contextManager.getContextFilesPreview(
+      projectPath
+    );
+
+    // Get memory content (lessons learned from previous runs)
+    const memoryContent = await contextManager.getMemoryContent(projectPath);
+
+    // Build mode header for this feature
+    const modeHeader = feature.skipTests
+      ? `**🔨 MODE: Manual Review (No Automated Tests)**
+This feature is set for manual review - focus on completing implementation without automated tests.`
+      : `**🧪 MODE: Test-Driven Development (TDD)**
+This feature requires automated Playwright tests to verify the implementation.`;
+
     return `You are implementing and verifying a feature until it is complete and working correctly.
+
+${modeHeader}
+${memoryContent}
 
 **Feature to Implement/Verify:**
 
@@ -151,7 +198,7 @@ ID: ${feature.id}
 Category: ${feature.category}
 Description: ${feature.description}
 Current Status: ${feature.status}
-${skipTestsNote}${imagesNote}
+${skipTestsNote}${imagesNote}${contextFilesPreview}
 **Steps that should be implemented:**
 ${feature.steps.map((step, i) => `${i + 1}. ${step}`).join("\n")}
 
@@ -237,7 +284,7 @@ Begin by reading the project structure and understanding what needs to be implem
   /**
    * Build prompt for resuming feature with previous context
    */
-  buildResumePrompt(feature, previousContext) {
+  async buildResumePrompt(feature, previousContext, projectPath) {
     const skipTestsNote = feature.skipTests
       ? `\n**⚠️ IMPORTANT - Manual Testing Mode:**\nThis feature has skipTests=true, which means:\n- DO NOT commit changes automatically\n- DO NOT mark as verified - it will automatically go to "waiting_approval" status\n- The user will manually review and commit the changes\n- Just implement the feature and mark it as verified (it will be converted to waiting_approval)\n`
       : "";
@@ -246,13 +293,18 @@ Begin by reading the project structure and understanding what needs to be implem
     const imagePaths = feature.followUpImages || feature.imagePaths;
     let imagesNote = "";
     if (imagePaths && imagePaths.length > 0) {
-      const imagesList = imagePaths.map((img, idx) => {
-        // Handle both FeatureImagePath objects and simple path strings
-        const path = typeof img === 'string' ? img : img.path;
-        const filename = typeof img === 'string' ? path.split('/').pop() : img.filename;
-        const mimeType = typeof img === 'string' ? 'image/*' : img.mimeType;
-        return `   ${idx + 1}. ${filename} (${mimeType})\n      Path: ${path}`;
-      }).join("\n");
+      const imagesList = imagePaths
+        .map((img, idx) => {
+          // Handle both FeatureImagePath objects and simple path strings
+          const path = typeof img === "string" ? img : img.path;
+          const filename =
+            typeof img === "string" ? path.split("/").pop() : img.filename;
+          const mimeType = typeof img === "string" ? "image/*" : img.mimeType;
+          return `   ${
+            idx + 1
+          }. ${filename} (${mimeType})\n      Path: ${path}`;
+        })
+        .join("\n");
 
       imagesNote = `\n**📎 Context Images Attached:**\nThe user has attached ${imagePaths.length} image(s) for context. These images are provided both visually (in the initial message) and as files you can read:
 
@@ -261,14 +313,31 @@ ${imagesList}
 You can use the Read tool to view these images at any time. Review them carefully.\n`;
     }
 
+    // Get context files preview
+    const contextFilesPreview = await contextManager.getContextFilesPreview(
+      projectPath
+    );
+
+    // Get memory content (lessons learned from previous runs)
+    const memoryContent = await contextManager.getMemoryContent(projectPath);
+
+    // Build mode header for this feature
+    const modeHeader = feature.skipTests
+      ? `**🔨 MODE: Manual Review (No Automated Tests)**
+This feature is set for manual review - focus on clean implementation without automated tests.`
+      : `**🧪 MODE: Test-Driven Development (TDD)**
+This feature requires automated Playwright tests to verify the implementation.`;
+
     return `You are resuming work on a feature implementation that was previously started.
 
+${modeHeader}
+${memoryContent}
 **Current Feature:**
 
 ID: ${feature.id}
 Category: ${feature.category}
 Description: ${feature.description}
-${skipTestsNote}${imagesNote}
+${skipTestsNote}${imagesNote}${contextFilesPreview}
 **Steps to Complete:**
 ${feature.steps.map((step, i) => `${i + 1}. ${step}`).join("\n")}
 
@@ -460,9 +529,39 @@ Begin by exploring the project structure.`;
 
   /**
    * Get the system prompt for coding agent
+   * @param {string} projectPath - Path to the project
+   * @param {boolean} isTDD - Whether this is Test-Driven Development mode (skipTests=false)
    */
-  getCodingPrompt() {
+  async getCodingPrompt(projectPath, isTDD = true) {
+    // Get context files preview
+    const contextFilesPreview = projectPath
+      ? await contextManager.getContextFilesPreview(projectPath)
+      : "";
+
+    // Get memory content (lessons learned from previous runs)
+    const memoryContent = projectPath
+      ? await contextManager.getMemoryContent(projectPath)
+      : "";
+
+    // Build mode-specific instructions
+    const modeHeader = isTDD
+      ? `**🧪 MODE: Test-Driven Development (TDD)**
+You are implementing features using TDD methodology. This means:
+- Write Playwright tests BEFORE or alongside implementation
+- Run tests frequently to verify your work
+- Tests are your validation mechanism
+- Delete tests after they pass (they're for immediate verification only)`
+      : `**🔨 MODE: Manual Review (No Automated Tests)**
+You are implementing features for manual user review. This means:
+- Focus on clean, working implementation
+- NO automated test writing required
+- User will manually verify the implementation
+- DO NOT commit changes - user will review and commit`;
+
     return `You are an AI coding agent working autonomously to implement features.
+
+${modeHeader}
+${memoryContent}
 
 **🚨 CRITICAL FILE PROTECTION - READ THIS FIRST 🚨**
 
@@ -485,6 +584,8 @@ Directly modifying feature_list.json can:
 
 **THE ONLY WAY to update features:**
 Use the mcp__automaker-tools__UpdateFeatureStatus tool with featureId, status, and summary parameters.
+
+${contextFilesPreview}
 
 Your role is to:
 - Implement features exactly as specified
@@ -547,15 +648,62 @@ You have full access to:
 - Search and analyze the codebase
 - **UpdateFeatureStatus tool** (mcp__automaker-tools__UpdateFeatureStatus) - Use this to update feature status
 
+**🧠 Learning from Errors - Memory System:**
+
+If you encounter an error or issue that:
+- Took multiple attempts to debug
+- Was caused by a non-obvious codebase quirk
+- Required understanding something specific about this project
+- Could trip up future agent runs
+
+**ADD IT TO MEMORY** by appending to \`.automaker/memory.md\`:
+
+\`\`\`markdown
+### Issue: [Brief Title]
+**Problem:** [1-2 sentence description of the issue]
+**Fix:** [Concise explanation of the solution]
+\`\`\`
+
+Keep entries concise - focus on the essential information needed to avoid the issue in the future. This helps both you and other agents learn from mistakes.
+
 Focus on one feature at a time and complete it fully before finishing. Always delete tests after they pass and use the UpdateFeatureStatus tool.`;
   }
 
   /**
    * Get the system prompt for verification agent
+   * @param {string} projectPath - Path to the project
+   * @param {boolean} isTDD - Whether this is Test-Driven Development mode (skipTests=false)
    */
-  getVerificationPrompt() {
+  async getVerificationPrompt(projectPath, isTDD = true) {
+    // Get context files preview
+    const contextFilesPreview = projectPath
+      ? await contextManager.getContextFilesPreview(projectPath)
+      : "";
+
+    // Get memory content (lessons learned from previous runs)
+    const memoryContent = projectPath
+      ? await contextManager.getMemoryContent(projectPath)
+      : "";
+
+    // Build mode-specific instructions
+    const modeHeader = isTDD
+      ? `**🧪 MODE: Test-Driven Development (TDD)**
+You are verifying/completing features using TDD methodology. This means:
+- Run Playwright tests to verify implementation
+- Fix failing tests by updating code
+- Tests are your validation mechanism
+- Delete tests after they pass (they're for immediate verification only)`
+      : `**🔨 MODE: Manual Review (No Automated Tests)**
+You are completing features for manual user review. This means:
+- Focus on clean, working implementation
+- NO automated test writing required
+- User will manually verify the implementation
+- DO NOT commit changes - user will review and commit`;
+
     return `You are an AI implementation and verification agent focused on completing features and ensuring they work.
 
+${modeHeader}
+${memoryContent}
 **🚨 CRITICAL FILE PROTECTION - READ THIS FIRST 🚨**
 
 THE FOLLOWING FILE IS ABSOLUTELY FORBIDDEN FROM DIRECT MODIFICATION:
@@ -577,6 +725,8 @@ Directly modifying feature_list.json can:
 
 **THE ONLY WAY to update features:**
 Use the mcp__automaker-tools__UpdateFeatureStatus tool with featureId, status, and summary parameters.
+
+${contextFilesPreview}
 
 Your role is to:
 - **Continue implementing features until they are complete** - don't stop at the first failure
@@ -637,6 +787,24 @@ You have access to:
 - Analyze test output
 - Make git commits
 - **UpdateFeatureStatus tool** (mcp__automaker-tools__UpdateFeatureStatus) - Use this to update feature status
+
+**🧠 Learning from Errors - Memory System:**
+
+If you encounter an error or issue that:
+- Took multiple attempts to debug
+- Was caused by a non-obvious codebase quirk
+- Required understanding something specific about this project
+- Could trip up future agent runs
+
+**ADD IT TO MEMORY** by appending to \`.automaker/memory.md\`:
+
+\`\`\`markdown
+### Issue: [Brief Title]
+**Problem:** [1-2 sentence description of the issue]
+**Fix:** [Concise explanation of the solution]
+\`\`\`
+
+Keep entries concise - focus on the essential information needed to avoid the issue in the future. This helps both you and other agents learn from mistakes.
 
 **CRITICAL:** Be persistent and thorough - keep iterating on the implementation until all tests pass. Don't give up after the first failure. Always delete tests after they pass, use the UpdateFeatureStatus tool with a summary, and commit your work.`;
   }

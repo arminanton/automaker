@@ -27,7 +27,11 @@ class FeatureExecutor {
       // PHASE 1: PLANNING
       // ========================================
       const planningMessage = `📋 Planning implementation for: ${feature.description}\n`;
-      await contextManager.writeToContextFile(projectPath, feature.id, planningMessage);
+      await contextManager.writeToContextFile(
+        projectPath,
+        feature.id,
+        planningMessage
+      );
 
       sendToRenderer({
         type: "auto_mode_phase",
@@ -35,7 +39,9 @@ class FeatureExecutor {
         phase: "planning",
         message: `Planning implementation for: ${feature.description}`,
       });
-      console.log(`[FeatureExecutor] Phase: PLANNING for ${feature.description}`);
+      console.log(
+        `[FeatureExecutor] Phase: PLANNING for ${feature.description}`
+      );
 
       const abortController = new AbortController();
       execution.abortController = abortController;
@@ -46,14 +52,17 @@ class FeatureExecutor {
         projectPath
       );
 
+      // Determine if we're in TDD mode (skipTests=false means TDD mode)
+      const isTDD = !feature.skipTests;
+
       // Configure options for the SDK query
       const options = {
         model: "claude-opus-4-5-20251101",
-        systemPrompt: promptBuilder.getCodingPrompt(),
+        systemPrompt: await promptBuilder.getCodingPrompt(projectPath, isTDD),
         maxTurns: 1000,
         cwd: projectPath,
         mcpServers: {
-          "automaker-tools": featureToolsServer
+          "automaker-tools": featureToolsServer,
         },
         allowedTools: [
           "Read",
@@ -75,7 +84,7 @@ class FeatureExecutor {
       };
 
       // Build the prompt for this specific feature
-      let prompt = promptBuilder.buildFeaturePrompt(feature);
+      let prompt = await promptBuilder.buildFeaturePrompt(feature, projectPath);
 
       // Add images to prompt if feature has imagePaths
       if (feature.imagePaths && feature.imagePaths.length > 0) {
@@ -103,7 +112,8 @@ class FeatureExecutor {
               ".gif": "image/gif",
               ".webp": "image/webp",
             };
-            const mediaType = mimeTypeMap[ext] || imagePathObj.mimeType || "image/png";
+            const mediaType =
+              mimeTypeMap[ext] || imagePathObj.mimeType || "image/png";
 
             contentBlocks.push({
               type: "image",
@@ -114,7 +124,9 @@ class FeatureExecutor {
               },
             });
 
-            console.log(`[FeatureExecutor] Added image to prompt: ${imagePath}`);
+            console.log(
+              `[FeatureExecutor] Added image to prompt: ${imagePath}`
+            );
           } catch (error) {
             console.error(
               `[FeatureExecutor] Failed to load image ${imagePathObj.path}:`,
@@ -142,7 +154,11 @@ class FeatureExecutor {
       // PHASE 2: ACTION
       // ========================================
       const actionMessage = `⚡ Executing implementation for: ${feature.description}\n`;
-      await contextManager.writeToContextFile(projectPath, feature.id, actionMessage);
+      await contextManager.writeToContextFile(
+        projectPath,
+        feature.id,
+        actionMessage
+      );
 
       sendToRenderer({
         type: "auto_mode_phase",
@@ -169,7 +185,11 @@ class FeatureExecutor {
               responseText += block.text;
 
               // Write to context file
-              await contextManager.writeToContextFile(projectPath, feature.id, block.text);
+              await contextManager.writeToContextFile(
+                projectPath,
+                feature.id,
+                block.text
+              );
 
               // Stream progress to renderer
               sendToRenderer({
@@ -182,7 +202,11 @@ class FeatureExecutor {
               if (!hasStartedToolUse) {
                 hasStartedToolUse = true;
                 const startMsg = "Starting code implementation...\n";
-                await contextManager.writeToContextFile(projectPath, feature.id, startMsg);
+                await contextManager.writeToContextFile(
+                  projectPath,
+                  feature.id,
+                  startMsg
+                );
                 sendToRenderer({
                   type: "auto_mode_progress",
                   featureId: feature.id,
@@ -192,7 +216,11 @@ class FeatureExecutor {
 
               // Write tool use to context file
               const toolMsg = `\n🔧 Tool: ${block.name}\n`;
-              await contextManager.writeToContextFile(projectPath, feature.id, toolMsg);
+              await contextManager.writeToContextFile(
+                projectPath,
+                feature.id,
+                toolMsg
+              );
 
               // Notify about tool use
               sendToRenderer({
@@ -213,7 +241,11 @@ class FeatureExecutor {
       // PHASE 3: VERIFICATION
       // ========================================
       const verificationMessage = `✅ Verifying implementation for: ${feature.description}\n`;
-      await contextManager.writeToContextFile(projectPath, feature.id, verificationMessage);
+      await contextManager.writeToContextFile(
+        projectPath,
+        feature.id,
+        verificationMessage
+      );
 
       sendToRenderer({
         type: "auto_mode_phase",
@@ -221,11 +253,17 @@ class FeatureExecutor {
         phase: "verification",
         message: `Verifying implementation for: ${feature.description}`,
       });
-      console.log(`[FeatureExecutor] Phase: VERIFICATION for ${feature.description}`);
+      console.log(
+        `[FeatureExecutor] Phase: VERIFICATION for ${feature.description}`
+      );
 
       const checkingMsg =
         "Verifying implementation and checking test results...\n";
-      await contextManager.writeToContextFile(projectPath, feature.id, checkingMsg);
+      await contextManager.writeToContextFile(
+        projectPath,
+        feature.id,
+        checkingMsg
+      );
       sendToRenderer({
         type: "auto_mode_progress",
         featureId: feature.id,
@@ -236,15 +274,21 @@ class FeatureExecutor {
       const updatedFeatures = await featureLoader.loadFeatures(projectPath);
       const updatedFeature = updatedFeatures.find((f) => f.id === feature.id);
       // For skipTests features, waiting_approval is also considered a success
-      const passes = updatedFeature?.status === "verified" || 
-                     (updatedFeature?.skipTests && updatedFeature?.status === "waiting_approval");
+      const passes =
+        updatedFeature?.status === "verified" ||
+        (updatedFeature?.skipTests &&
+          updatedFeature?.status === "waiting_approval");
 
       // Send verification result
       const resultMsg = passes
         ? "✓ Verification successful: All tests passed\n"
         : "✗ Verification: Tests need attention\n";
 
-      await contextManager.writeToContextFile(projectPath, feature.id, resultMsg);
+      await contextManager.writeToContextFile(
+        projectPath,
+        feature.id,
+        resultMsg
+      );
       sendToRenderer({
         type: "auto_mode_progress",
         featureId: feature.id,
@@ -283,12 +327,24 @@ class FeatureExecutor {
   /**
    * Resume feature implementation with previous context
    */
-  async resumeFeatureWithContext(feature, projectPath, sendToRenderer, previousContext, execution) {
-    console.log(`[FeatureExecutor] Resuming with context for: ${feature.description}`);
+  async resumeFeatureWithContext(
+    feature,
+    projectPath,
+    sendToRenderer,
+    previousContext,
+    execution
+  ) {
+    console.log(
+      `[FeatureExecutor] Resuming with context for: ${feature.description}`
+    );
 
     try {
       const resumeMessage = `\n🔄 Resuming implementation for: ${feature.description}\n`;
-      await contextManager.writeToContextFile(projectPath, feature.id, resumeMessage);
+      await contextManager.writeToContextFile(
+        projectPath,
+        feature.id,
+        resumeMessage
+      );
 
       sendToRenderer({
         type: "auto_mode_phase",
@@ -300,6 +356,9 @@ class FeatureExecutor {
       const abortController = new AbortController();
       execution.abortController = abortController;
 
+      // Determine if we're in TDD mode (skipTests=false means TDD mode)
+      const isTDD = !feature.skipTests;
+
       // Create custom MCP server with UpdateFeatureStatus tool
       const featureToolsServer = mcpServerFactory.createFeatureToolsServer(
         featureLoader.updateFeatureStatus.bind(featureLoader),
@@ -308,13 +367,23 @@ class FeatureExecutor {
 
       const options = {
         model: "claude-opus-4-5-20251101",
-        systemPrompt: promptBuilder.getVerificationPrompt(),
+        systemPrompt: await promptBuilder.getVerificationPrompt(projectPath, isTDD),
         maxTurns: 1000,
         cwd: projectPath,
         mcpServers: {
-          "automaker-tools": featureToolsServer
+          "automaker-tools": featureToolsServer,
         },
-        allowedTools: ["Read", "Write", "Edit", "Glob", "Grep", "Bash", "WebSearch", "WebFetch", "mcp__automaker-tools__UpdateFeatureStatus"],
+        allowedTools: [
+          "Read",
+          "Write",
+          "Edit",
+          "Glob",
+          "Grep",
+          "Bash",
+          "WebSearch",
+          "WebFetch",
+          "mcp__automaker-tools__UpdateFeatureStatus",
+        ],
         permissionMode: "acceptEdits",
         sandbox: {
           enabled: true,
@@ -324,7 +393,11 @@ class FeatureExecutor {
       };
 
       // Build prompt with previous context
-      let prompt = promptBuilder.buildResumePrompt(feature, previousContext);
+      let prompt = await promptBuilder.buildResumePrompt(
+        feature,
+        previousContext,
+        projectPath
+      );
 
       // Add images to prompt if feature has imagePaths or followUpImages
       const imagePaths = feature.followUpImages || feature.imagePaths;
@@ -343,7 +416,10 @@ class FeatureExecutor {
         for (const imagePathObj of imagePaths) {
           try {
             // Handle both string paths and FeatureImagePath objects
-            const imagePath = typeof imagePathObj === 'string' ? imagePathObj : imagePathObj.path;
+            const imagePath =
+              typeof imagePathObj === "string"
+                ? imagePathObj
+                : imagePathObj.path;
             const imageBuffer = fs.readFileSync(imagePath);
             const base64Data = imageBuffer.toString("base64");
             const ext = path.extname(imagePath).toLowerCase();
@@ -354,9 +430,10 @@ class FeatureExecutor {
               ".gif": "image/gif",
               ".webp": "image/webp",
             };
-            const mediaType = typeof imagePathObj === 'string'
-              ? (mimeTypeMap[ext] || "image/png")
-              : (mimeTypeMap[ext] || imagePathObj.mimeType || "image/png");
+            const mediaType =
+              typeof imagePathObj === "string"
+                ? mimeTypeMap[ext] || "image/png"
+                : mimeTypeMap[ext] || imagePathObj.mimeType || "image/png";
 
             contentBlocks.push({
               type: "image",
@@ -367,9 +444,14 @@ class FeatureExecutor {
               },
             });
 
-            console.log(`[FeatureExecutor] Added image to resume prompt: ${imagePath}`);
+            console.log(
+              `[FeatureExecutor] Added image to resume prompt: ${imagePath}`
+            );
           } catch (error) {
-            const errorPath = typeof imagePathObj === 'string' ? imagePathObj : imagePathObj.path;
+            const errorPath =
+              typeof imagePathObj === "string"
+                ? imagePathObj
+                : imagePathObj.path;
             console.error(
               `[FeatureExecutor] Failed to load image ${errorPath}:`,
               error
@@ -394,7 +476,11 @@ class FeatureExecutor {
             if (block.type === "text") {
               responseText += block.text;
 
-              await contextManager.writeToContextFile(projectPath, feature.id, block.text);
+              await contextManager.writeToContextFile(
+                projectPath,
+                feature.id,
+                block.text
+              );
 
               sendToRenderer({
                 type: "auto_mode_progress",
@@ -403,7 +489,11 @@ class FeatureExecutor {
               });
             } else if (block.type === "tool_use") {
               const toolMsg = `\n🔧 Tool: ${block.name}\n`;
-              await contextManager.writeToContextFile(projectPath, feature.id, toolMsg);
+              await contextManager.writeToContextFile(
+                projectPath,
+                feature.id,
+                toolMsg
+              );
 
               sendToRenderer({
                 type: "auto_mode_tool",
@@ -423,14 +513,20 @@ class FeatureExecutor {
       const updatedFeatures = await featureLoader.loadFeatures(projectPath);
       const updatedFeature = updatedFeatures.find((f) => f.id === feature.id);
       // For skipTests features, waiting_approval is also considered a success
-      const passes = updatedFeature?.status === "verified" || 
-                     (updatedFeature?.skipTests && updatedFeature?.status === "waiting_approval");
+      const passes =
+        updatedFeature?.status === "verified" ||
+        (updatedFeature?.skipTests &&
+          updatedFeature?.status === "waiting_approval");
 
       const finalMsg = passes
         ? "✓ Feature successfully verified and completed\n"
         : "⚠ Feature still in progress - may need additional work\n";
 
-      await contextManager.writeToContextFile(projectPath, feature.id, finalMsg);
+      await contextManager.writeToContextFile(
+        projectPath,
+        feature.id,
+        finalMsg
+      );
 
       sendToRenderer({
         type: "auto_mode_progress",
@@ -469,11 +565,17 @@ class FeatureExecutor {
    * Analyzes changes and creates a proper conventional commit message
    */
   async commitChangesOnly(feature, projectPath, sendToRenderer, execution) {
-    console.log(`[FeatureExecutor] Committing changes for: ${feature.description}`);
+    console.log(
+      `[FeatureExecutor] Committing changes for: ${feature.description}`
+    );
 
     try {
       const commitMessage = `\n📝 Committing changes for: ${feature.description}\n`;
-      await contextManager.writeToContextFile(projectPath, feature.id, commitMessage);
+      await contextManager.writeToContextFile(
+        projectPath,
+        feature.id,
+        commitMessage
+      );
 
       sendToRenderer({
         type: "auto_mode_progress",
@@ -503,7 +605,7 @@ IMPORTANT RULES:
         maxTurns: 15, // Allow some turns to analyze and commit
         cwd: projectPath,
         mcpServers: {
-          "automaker-tools": featureToolsServer
+          "automaker-tools": featureToolsServer,
         },
         allowedTools: ["Bash", "mcp__automaker-tools__UpdateFeatureStatus"],
         permissionMode: "acceptEdits",
@@ -569,7 +671,11 @@ EOF
             if (block.type === "text") {
               responseText += block.text;
 
-              await contextManager.writeToContextFile(projectPath, feature.id, block.text);
+              await contextManager.writeToContextFile(
+                projectPath,
+                feature.id,
+                block.text
+              );
 
               sendToRenderer({
                 type: "auto_mode_progress",
@@ -578,7 +684,11 @@ EOF
               });
             } else if (block.type === "tool_use") {
               const toolMsg = `\n🔧 Tool: ${block.name}\n`;
-              await contextManager.writeToContextFile(projectPath, feature.id, toolMsg);
+              await contextManager.writeToContextFile(
+                projectPath,
+                feature.id,
+                toolMsg
+              );
 
               sendToRenderer({
                 type: "auto_mode_tool",
@@ -595,7 +705,11 @@ EOF
       execution.abortController = null;
 
       const finalMsg = "✓ Changes committed successfully\n";
-      await contextManager.writeToContextFile(projectPath, feature.id, finalMsg);
+      await contextManager.writeToContextFile(
+        projectPath,
+        feature.id,
+        finalMsg
+      );
 
       sendToRenderer({
         type: "auto_mode_progress",
