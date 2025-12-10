@@ -47,6 +47,7 @@ export type AutoModePhase = "planning" | "action" | "verification";
 export interface AutoModeEvent {
   type: "auto_mode_feature_start" | "auto_mode_progress" | "auto_mode_tool" | "auto_mode_feature_complete" | "auto_mode_error" | "auto_mode_complete" | "auto_mode_phase";
   featureId?: string;
+  projectId?: string;
   feature?: object;
   content?: string;
   tool?: string;
@@ -55,6 +56,47 @@ export interface AutoModeEvent {
   message?: string;
   error?: string;
   phase?: AutoModePhase;
+}
+
+// Feature Suggestions types
+export interface FeatureSuggestion {
+  id: string;
+  category: string;
+  description: string;
+  steps: string[];
+  priority: number;
+  reasoning: string;
+}
+
+export interface SuggestionsEvent {
+  type: "suggestions_progress" | "suggestions_tool" | "suggestions_complete" | "suggestions_error";
+  content?: string;
+  tool?: string;
+  input?: unknown;
+  suggestions?: FeatureSuggestion[];
+  error?: string;
+}
+
+export interface SuggestionsAPI {
+  generate: (projectPath: string) => Promise<{ success: boolean; error?: string }>;
+  stop: () => Promise<{ success: boolean; error?: string }>;
+  status: () => Promise<{ success: boolean; isRunning?: boolean; error?: string }>;
+  onEvent: (callback: (event: SuggestionsEvent) => void) => () => void;
+}
+
+// Spec Regeneration types
+export type SpecRegenerationEvent =
+  | { type: "spec_regeneration_progress"; content: string }
+  | { type: "spec_regeneration_tool"; tool: string; input: unknown }
+  | { type: "spec_regeneration_complete"; message: string }
+  | { type: "spec_regeneration_error"; error: string };
+
+export interface SpecRegenerationAPI {
+  create: (projectPath: string, projectOverview: string, generateFeatures?: boolean) => Promise<{ success: boolean; error?: string }>;
+  generate: (projectPath: string, projectDefinition: string) => Promise<{ success: boolean; error?: string }>;
+  stop: () => Promise<{ success: boolean; error?: string }>;
+  status: () => Promise<{ success: boolean; isRunning?: boolean; error?: string }>;
+  onEvent: (callback: (event: SpecRegenerationEvent) => void) => () => void;
 }
 
 export interface AutoModeAPI {
@@ -93,12 +135,15 @@ export interface ElectronAPI {
   getPath: (name: string) => Promise<string>;
   saveImageToTemp?: (data: string, filename: string, mimeType: string) => Promise<SaveImageResult>;
   autoMode?: AutoModeAPI;
+  suggestions?: SuggestionsAPI;
+  specRegeneration?: SpecRegenerationAPI;
 }
 
+// Augment global Window interface
 declare global {
   interface Window {
-    electronAPI?: ElectronAPI;
-    isElectron?: boolean;
+    electronAPI: ElectronAPI | undefined;
+    isElectron: boolean | undefined;
   }
 }
 
@@ -365,6 +410,12 @@ export const getElectronAPI = (): ElectronAPI => {
 
     // Mock Auto Mode API
     autoMode: createMockAutoModeAPI(),
+
+    // Mock Suggestions API
+    suggestions: createMockSuggestionsAPI(),
+
+    // Mock Spec Regeneration API
+    specRegeneration: createMockSpecRegenerationAPI(),
   };
 };
 
@@ -766,6 +817,381 @@ function delay(ms: number, featureId: string): Promise<void> {
     const timeout = setTimeout(resolve, ms);
     mockAutoModeTimeouts.set(featureId, timeout);
   });
+}
+
+// Mock Suggestions state and implementation
+let mockSuggestionsRunning = false;
+let mockSuggestionsCallbacks: ((event: SuggestionsEvent) => void)[] = [];
+let mockSuggestionsTimeout: NodeJS.Timeout | null = null;
+
+function createMockSuggestionsAPI(): SuggestionsAPI {
+  return {
+    generate: async (projectPath: string) => {
+      if (mockSuggestionsRunning) {
+        return { success: false, error: "Suggestions generation is already running" };
+      }
+
+      mockSuggestionsRunning = true;
+      console.log(`[Mock] Generating suggestions for: ${projectPath}`);
+
+      // Simulate async suggestion generation
+      simulateSuggestionsGeneration();
+
+      return { success: true };
+    },
+
+    stop: async () => {
+      mockSuggestionsRunning = false;
+      if (mockSuggestionsTimeout) {
+        clearTimeout(mockSuggestionsTimeout);
+        mockSuggestionsTimeout = null;
+      }
+      return { success: true };
+    },
+
+    status: async () => {
+      return {
+        success: true,
+        isRunning: mockSuggestionsRunning,
+      };
+    },
+
+    onEvent: (callback: (event: SuggestionsEvent) => void) => {
+      mockSuggestionsCallbacks.push(callback);
+      return () => {
+        mockSuggestionsCallbacks = mockSuggestionsCallbacks.filter(cb => cb !== callback);
+      };
+    },
+  };
+}
+
+function emitSuggestionsEvent(event: SuggestionsEvent) {
+  mockSuggestionsCallbacks.forEach(cb => cb(event));
+}
+
+async function simulateSuggestionsGeneration() {
+  // Emit progress events
+  emitSuggestionsEvent({
+    type: "suggestions_progress",
+    content: "Starting project analysis...\n",
+  });
+
+  await new Promise(resolve => {
+    mockSuggestionsTimeout = setTimeout(resolve, 500);
+  });
+  if (!mockSuggestionsRunning) return;
+
+  emitSuggestionsEvent({
+    type: "suggestions_tool",
+    tool: "Glob",
+    input: { pattern: "**/*.{ts,tsx,js,jsx}" },
+  });
+
+  await new Promise(resolve => {
+    mockSuggestionsTimeout = setTimeout(resolve, 500);
+  });
+  if (!mockSuggestionsRunning) return;
+
+  emitSuggestionsEvent({
+    type: "suggestions_progress",
+    content: "Analyzing codebase structure...\n",
+  });
+
+  await new Promise(resolve => {
+    mockSuggestionsTimeout = setTimeout(resolve, 500);
+  });
+  if (!mockSuggestionsRunning) return;
+
+  emitSuggestionsEvent({
+    type: "suggestions_progress",
+    content: "Identifying missing features...\n",
+  });
+
+  await new Promise(resolve => {
+    mockSuggestionsTimeout = setTimeout(resolve, 500);
+  });
+  if (!mockSuggestionsRunning) return;
+
+  // Generate mock suggestions
+  const mockSuggestions: FeatureSuggestion[] = [
+    {
+      id: `suggestion-${Date.now()}-0`,
+      category: "User Experience",
+      description: "Add dark mode toggle with system preference detection",
+      steps: [
+        "Create a ThemeProvider context to manage theme state",
+        "Add a toggle component in the settings or header",
+        "Implement CSS variables for theme colors",
+        "Add localStorage persistence for user preference"
+      ],
+      priority: 1,
+      reasoning: "Dark mode is a standard feature that improves accessibility and user comfort"
+    },
+    {
+      id: `suggestion-${Date.now()}-1`,
+      category: "Performance",
+      description: "Implement lazy loading for heavy components",
+      steps: [
+        "Identify components that are heavy or rarely used",
+        "Use React.lazy() and Suspense for code splitting",
+        "Add loading states for lazy-loaded components"
+      ],
+      priority: 2,
+      reasoning: "Improves initial load time and reduces bundle size"
+    },
+    {
+      id: `suggestion-${Date.now()}-2`,
+      category: "Accessibility",
+      description: "Add keyboard navigation support throughout the app",
+      steps: [
+        "Implement focus management for modals and dialogs",
+        "Add keyboard shortcuts for common actions",
+        "Ensure all interactive elements are focusable",
+        "Add ARIA labels and roles where needed"
+      ],
+      priority: 3,
+      reasoning: "Improves accessibility for users who rely on keyboard navigation"
+    },
+    {
+      id: `suggestion-${Date.now()}-3`,
+      category: "Testing",
+      description: "Add comprehensive unit test coverage",
+      steps: [
+        "Set up Jest and React Testing Library",
+        "Create tests for all utility functions",
+        "Add component tests for critical UI elements",
+        "Set up CI pipeline for automated testing"
+      ],
+      priority: 4,
+      reasoning: "Ensures code quality and prevents regressions"
+    },
+    {
+      id: `suggestion-${Date.now()}-4`,
+      category: "Developer Experience",
+      description: "Add Storybook for component documentation",
+      steps: [
+        "Install and configure Storybook",
+        "Create stories for all UI components",
+        "Add interaction tests using play functions",
+        "Set up Chromatic for visual regression testing"
+      ],
+      priority: 5,
+      reasoning: "Improves component development workflow and documentation"
+    }
+  ];
+
+  emitSuggestionsEvent({
+    type: "suggestions_complete",
+    suggestions: mockSuggestions,
+  });
+
+  mockSuggestionsRunning = false;
+  mockSuggestionsTimeout = null;
+}
+
+// Mock Spec Regeneration state and implementation
+let mockSpecRegenerationRunning = false;
+let mockSpecRegenerationCallbacks: ((event: SpecRegenerationEvent) => void)[] = [];
+let mockSpecRegenerationTimeout: NodeJS.Timeout | null = null;
+
+function createMockSpecRegenerationAPI(): SpecRegenerationAPI {
+  return {
+    create: async (projectPath: string, projectOverview: string, generateFeatures = true) => {
+      if (mockSpecRegenerationRunning) {
+        return { success: false, error: "Spec creation is already running" };
+      }
+
+      mockSpecRegenerationRunning = true;
+      console.log(`[Mock] Creating initial spec for: ${projectPath}, generateFeatures: ${generateFeatures}`);
+
+      // Simulate async spec creation
+      simulateSpecCreation(projectPath, projectOverview, generateFeatures);
+
+      return { success: true };
+    },
+
+    generate: async (projectPath: string, projectDefinition: string) => {
+      if (mockSpecRegenerationRunning) {
+        return { success: false, error: "Spec regeneration is already running" };
+      }
+
+      mockSpecRegenerationRunning = true;
+      console.log(`[Mock] Regenerating spec for: ${projectPath}`);
+
+      // Simulate async spec regeneration
+      simulateSpecRegeneration(projectPath, projectDefinition);
+
+      return { success: true };
+    },
+
+    stop: async () => {
+      mockSpecRegenerationRunning = false;
+      if (mockSpecRegenerationTimeout) {
+        clearTimeout(mockSpecRegenerationTimeout);
+        mockSpecRegenerationTimeout = null;
+      }
+      return { success: true };
+    },
+
+    status: async () => {
+      return {
+        success: true,
+        isRunning: mockSpecRegenerationRunning,
+      };
+    },
+
+    onEvent: (callback: (event: SpecRegenerationEvent) => void) => {
+      mockSpecRegenerationCallbacks.push(callback);
+      return () => {
+        mockSpecRegenerationCallbacks = mockSpecRegenerationCallbacks.filter(cb => cb !== callback);
+      };
+    },
+  };
+}
+
+function emitSpecRegenerationEvent(event: SpecRegenerationEvent) {
+  mockSpecRegenerationCallbacks.forEach(cb => cb(event));
+}
+
+async function simulateSpecCreation(projectPath: string, projectOverview: string, generateFeatures = true) {
+  emitSpecRegenerationEvent({
+    type: "spec_regeneration_progress",
+    content: "Starting project analysis...\n",
+  });
+
+  await new Promise(resolve => {
+    mockSpecRegenerationTimeout = setTimeout(resolve, 500);
+  });
+  if (!mockSpecRegenerationRunning) return;
+
+  emitSpecRegenerationEvent({
+    type: "spec_regeneration_tool",
+    tool: "Glob",
+    input: { pattern: "**/*.{json,ts,tsx}" },
+  });
+
+  await new Promise(resolve => {
+    mockSpecRegenerationTimeout = setTimeout(resolve, 500);
+  });
+  if (!mockSpecRegenerationRunning) return;
+
+  emitSpecRegenerationEvent({
+    type: "spec_regeneration_progress",
+    content: "Detecting tech stack...\n",
+  });
+
+  await new Promise(resolve => {
+    mockSpecRegenerationTimeout = setTimeout(resolve, 500);
+  });
+  if (!mockSpecRegenerationRunning) return;
+
+  // Write mock app_spec.txt
+  mockFileSystem[`${projectPath}/.automaker/app_spec.txt`] = `<project_specification>
+  <project_name>Demo Project</project_name>
+
+  <overview>
+    ${projectOverview}
+  </overview>
+
+  <technology_stack>
+    <frontend>
+      <framework>Next.js</framework>
+      <ui_library>React</ui_library>
+      <styling>Tailwind CSS</styling>
+    </frontend>
+  </technology_stack>
+
+  <core_capabilities>
+    <feature_1>Core functionality based on overview</feature_1>
+  </core_capabilities>
+
+  <implementation_roadmap>
+    <phase_1_foundation>Setup and basic structure</phase_1_foundation>
+    <phase_2_core_logic>Core features implementation</phase_2_core_logic>
+  </implementation_roadmap>
+</project_specification>`;
+
+  // If generateFeatures is true, also write feature_list.json
+  if (generateFeatures) {
+    const timestamp = Date.now();
+    mockFileSystem[`${projectPath}/.automaker/feature_list.json`] = JSON.stringify([
+      {
+        id: `feature-${timestamp}-0`,
+        category: "Phase 1: Foundation",
+        description: "Setup and basic structure",
+        status: "backlog",
+        steps: ["Initialize project", "Configure dependencies"],
+        skipTests: true,
+      },
+      {
+        id: `feature-${timestamp}-1`,
+        category: "Phase 2: Core Logic",
+        description: "Core features implementation",
+        status: "backlog",
+        steps: ["Implement core functionality", "Add business logic"],
+        skipTests: true,
+      },
+    ], null, 2);
+  }
+
+  emitSpecRegenerationEvent({
+    type: "spec_regeneration_complete",
+    message: "Initial spec creation complete!",
+  });
+
+  mockSpecRegenerationRunning = false;
+  mockSpecRegenerationTimeout = null;
+}
+
+async function simulateSpecRegeneration(projectPath: string, projectDefinition: string) {
+  emitSpecRegenerationEvent({
+    type: "spec_regeneration_progress",
+    content: "Starting spec regeneration...\n",
+  });
+
+  await new Promise(resolve => {
+    mockSpecRegenerationTimeout = setTimeout(resolve, 500);
+  });
+  if (!mockSpecRegenerationRunning) return;
+
+  emitSpecRegenerationEvent({
+    type: "spec_regeneration_progress",
+    content: "Analyzing codebase...\n",
+  });
+
+  await new Promise(resolve => {
+    mockSpecRegenerationTimeout = setTimeout(resolve, 500);
+  });
+  if (!mockSpecRegenerationRunning) return;
+
+  // Write regenerated spec
+  mockFileSystem[`${projectPath}/.automaker/app_spec.txt`] = `<project_specification>
+  <project_name>Regenerated Project</project_name>
+
+  <overview>
+    ${projectDefinition}
+  </overview>
+
+  <technology_stack>
+    <frontend>
+      <framework>Next.js</framework>
+      <ui_library>React</ui_library>
+      <styling>Tailwind CSS</styling>
+    </frontend>
+  </technology_stack>
+
+  <core_capabilities>
+    <feature_1>Regenerated features based on definition</feature_1>
+  </core_capabilities>
+</project_specification>`;
+
+  emitSpecRegenerationEvent({
+    type: "spec_regeneration_complete",
+    message: "Spec regeneration complete!",
+  });
+
+  mockSpecRegenerationRunning = false;
+  mockSpecRegenerationTimeout = null;
 }
 
 // Utility functions for project management

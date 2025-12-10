@@ -94,6 +94,8 @@ export interface AppState {
   projects: Project[];
   currentProject: Project | null;
   trashedProjects: TrashedProject[];
+  projectHistory: string[]; // Array of project IDs in MRU order (most recent first)
+  projectHistoryIndex: number; // Current position in project history for cycling
 
   // View state
   currentView: ViewMode;
@@ -119,9 +121,11 @@ export interface AppState {
   currentChatSession: ChatSession | null;
   chatHistoryOpen: boolean;
 
-  // Auto Mode
-  isAutoModeRunning: boolean;
-  runningAutoTasks: string[]; // Feature IDs being worked on (supports concurrent tasks)
+  // Auto Mode (per-project state, keyed by project ID)
+  autoModeByProject: Record<string, {
+    isRunning: boolean;
+    runningTasks: string[]; // Feature IDs being worked on
+  }>;
   autoModeActivityLog: AutoModeActivity[];
   maxConcurrency: number; // Maximum number of concurrent agent tasks
 
@@ -162,6 +166,8 @@ export interface AppActions {
   emptyTrash: () => void;
   setCurrentProject: (project: Project | null) => void;
   reorderProjects: (oldIndex: number, newIndex: number) => void;
+  cyclePrevProject: () => void; // Cycle back through project history (Q)
+  cycleNextProject: () => void; // Cycle forward through project history (E)
 
   // View actions
   setCurrentView: (view: ViewMode) => void;
@@ -198,11 +204,12 @@ export interface AppActions {
   setChatHistoryOpen: (open: boolean) => void;
   toggleChatHistory: () => void;
 
-  // Auto Mode actions
-  setAutoModeRunning: (running: boolean) => void;
-  addRunningTask: (taskId: string) => void;
-  removeRunningTask: (taskId: string) => void;
-  clearRunningTasks: () => void;
+  // Auto Mode actions (per-project)
+  setAutoModeRunning: (projectId: string, running: boolean) => void;
+  addRunningTask: (projectId: string, taskId: string) => void;
+  removeRunningTask: (projectId: string, taskId: string) => void;
+  clearRunningTasks: (projectId: string) => void;
+  getAutoModeState: (projectId: string) => { isRunning: boolean; runningTasks: string[] };
   addAutoModeActivity: (
     activity: Omit<AutoModeActivity, "id" | "timestamp">
   ) => void;
@@ -223,6 +230,8 @@ const initialState: AppState = {
   projects: [],
   currentProject: null,
   trashedProjects: [],
+  projectHistory: [],
+  projectHistoryIndex: -1,
   currentView: "welcome",
   sidebarOpen: true,
   theme: "dark",
@@ -236,8 +245,7 @@ const initialState: AppState = {
   chatSessions: [],
   currentChatSession: null,
   chatHistoryOpen: false,
-  isAutoModeRunning: false,
-  runningAutoTasks: [],
+  autoModeByProject: {},
   autoModeActivityLog: [],
   maxConcurrency: 3, // Default to 3 concurrent agents
   kanbanCardDetailLevel: "standard", // Default to standard detail level
@@ -363,8 +371,56 @@ export const useAppStore = create<AppState & AppActions>()(
         set({ currentProject: project });
         if (project) {
           set({ currentView: "board" });
+          // Add to project history (MRU order)
+          const currentHistory = get().projectHistory;
+          // Remove this project if it's already in history
+          const filteredHistory = currentHistory.filter((id) => id !== project.id);
+          // Add to the front (most recent)
+          const newHistory = [project.id, ...filteredHistory];
+          // Reset history index to 0 (current project)
+          set({ projectHistory: newHistory, projectHistoryIndex: 0 });
         } else {
           set({ currentView: "welcome" });
+        }
+      },
+
+      cyclePrevProject: () => {
+        const { projectHistory, projectHistoryIndex, projects } = get();
+        if (projectHistory.length <= 1) return; // Need at least 2 projects to cycle
+
+        // Move to the next index (going back in history = higher index)
+        const newIndex = (projectHistoryIndex + 1) % projectHistory.length;
+        const targetProjectId = projectHistory[newIndex];
+        const targetProject = projects.find((p) => p.id === targetProjectId);
+
+        if (targetProject) {
+          // Update the index but don't modify history order when cycling
+          set({
+            currentProject: targetProject,
+            projectHistoryIndex: newIndex,
+            currentView: "board"
+          });
+        }
+      },
+
+      cycleNextProject: () => {
+        const { projectHistory, projectHistoryIndex, projects } = get();
+        if (projectHistory.length <= 1) return; // Need at least 2 projects to cycle
+
+        // Move to the previous index (going forward = lower index, wrapping around)
+        const newIndex = projectHistoryIndex <= 0
+          ? projectHistory.length - 1
+          : projectHistoryIndex - 1;
+        const targetProjectId = projectHistory[newIndex];
+        const targetProject = projects.find((p) => p.id === targetProjectId);
+
+        if (targetProject) {
+          // Update the index but don't modify history order when cycling
+          set({
+            currentProject: targetProject,
+            projectHistoryIndex: newIndex,
+            currentView: "board"
+          });
         }
       },
 
@@ -522,25 +578,63 @@ export const useAppStore = create<AppState & AppActions>()(
 
       toggleChatHistory: () => set({ chatHistoryOpen: !get().chatHistoryOpen }),
 
-      // Auto Mode actions
-      setAutoModeRunning: (running) => set({ isAutoModeRunning: running }),
-
-      addRunningTask: (taskId) => {
-        const current = get().runningAutoTasks;
-        if (!current.includes(taskId)) {
-          set({ runningAutoTasks: [...current, taskId] });
-        }
-      },
-
-      removeRunningTask: (taskId) => {
+      // Auto Mode actions (per-project)
+      setAutoModeRunning: (projectId, running) => {
+        const current = get().autoModeByProject;
+        const projectState = current[projectId] || { isRunning: false, runningTasks: [] };
         set({
-          runningAutoTasks: get().runningAutoTasks.filter(
-            (id) => id !== taskId
-          ),
+          autoModeByProject: {
+            ...current,
+            [projectId]: { ...projectState, isRunning: running },
+          },
         });
       },
 
-      clearRunningTasks: () => set({ runningAutoTasks: [] }),
+      addRunningTask: (projectId, taskId) => {
+        const current = get().autoModeByProject;
+        const projectState = current[projectId] || { isRunning: false, runningTasks: [] };
+        if (!projectState.runningTasks.includes(taskId)) {
+          set({
+            autoModeByProject: {
+              ...current,
+              [projectId]: {
+                ...projectState,
+                runningTasks: [...projectState.runningTasks, taskId],
+              },
+            },
+          });
+        }
+      },
+
+      removeRunningTask: (projectId, taskId) => {
+        const current = get().autoModeByProject;
+        const projectState = current[projectId] || { isRunning: false, runningTasks: [] };
+        set({
+          autoModeByProject: {
+            ...current,
+            [projectId]: {
+              ...projectState,
+              runningTasks: projectState.runningTasks.filter((id) => id !== taskId),
+            },
+          },
+        });
+      },
+
+      clearRunningTasks: (projectId) => {
+        const current = get().autoModeByProject;
+        const projectState = current[projectId] || { isRunning: false, runningTasks: [] };
+        set({
+          autoModeByProject: {
+            ...current,
+            [projectId]: { ...projectState, runningTasks: [] },
+          },
+        });
+      },
+
+      getAutoModeState: (projectId) => {
+        const projectState = get().autoModeByProject[projectId];
+        return projectState || { isRunning: false, runningTasks: [] };
+      },
 
       addAutoModeActivity: (activity) => {
         const id = `activity-${Date.now()}-${Math.random()
@@ -579,6 +673,8 @@ export const useAppStore = create<AppState & AppActions>()(
         projects: state.projects,
         currentProject: state.currentProject,
         trashedProjects: state.trashedProjects,
+        projectHistory: state.projectHistory,
+        projectHistoryIndex: state.projectHistoryIndex,
         currentView: state.currentView,
         theme: state.theme,
         sidebarOpen: state.sidebarOpen,

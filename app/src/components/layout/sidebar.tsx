@@ -16,9 +16,12 @@ import {
   PanelLeft,
   PanelLeftClose,
   ChevronDown,
+  Redo2,
   Check,
   BookOpen,
   GripVertical,
+  RotateCw,
+  RotateCcw,
   Trash2,
   Undo2,
 } from "lucide-react";
@@ -44,8 +47,15 @@ import {
   KeyboardShortcut,
 } from "@/hooks/use-keyboard-shortcuts";
 import { getElectronAPI, Project, TrashedProject } from "@/lib/electron";
-import { initializeProject } from "@/lib/project-init";
+import {
+  initializeProject,
+  hasAppSpec,
+  hasAutomakerDir,
+} from "@/lib/project-init";
 import { toast } from "sonner";
+import { Sparkles, Loader2 } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import type { SpecRegenerationEvent } from "@/types/electron";
 import {
   DndContext,
   DragEndEvent,
@@ -155,6 +165,7 @@ export function Sidebar() {
     currentProject,
     currentView,
     sidebarOpen,
+    projectHistory,
     addProject,
     setCurrentProject,
     setCurrentView,
@@ -163,6 +174,8 @@ export function Sidebar() {
     deleteTrashedProject,
     emptyTrash,
     reorderProjects,
+    cyclePrevProject,
+    cycleNextProject,
   } = useAppStore();
 
   // State for project picker dropdown
@@ -170,6 +183,17 @@ export function Sidebar() {
   const [showTrashDialog, setShowTrashDialog] = useState(false);
   const [activeTrashId, setActiveTrashId] = useState<string | null>(null);
   const [isEmptyingTrash, setIsEmptyingTrash] = useState(false);
+
+  // State for new project setup dialog
+  const [showSetupDialog, setShowSetupDialog] = useState(false);
+  const [setupProjectPath, setSetupProjectPath] = useState("");
+  const [projectOverview, setProjectOverview] = useState("");
+  const [isCreatingSpec, setIsCreatingSpec] = useState(false);
+  const [creatingSpecProjectPath, setCreatingSpecProjectPath] = useState<
+    string | null
+  >(null);
+  const [generateFeatures, setGenerateFeatures] = useState(true);
+  const [showSpecIndicator, setShowSpecIndicator] = useState(true);
 
   // Sensors for drag-and-drop
   const sensors = useSensors(
@@ -197,6 +221,93 @@ export function Sidebar() {
     [projects, reorderProjects]
   );
 
+  // Subscribe to spec regeneration events
+  useEffect(() => {
+    const api = getElectronAPI();
+    if (!api.specRegeneration) return;
+
+    const unsubscribe = api.specRegeneration.onEvent(
+      (event: SpecRegenerationEvent) => {
+        console.log("[Sidebar] Spec regeneration event:", event.type);
+
+        if (event.type === "spec_regeneration_complete") {
+          setIsCreatingSpec(false);
+          setCreatingSpecProjectPath(null);
+          setShowSetupDialog(false);
+          setProjectOverview("");
+          setSetupProjectPath("");
+          toast.success("App specification created", {
+            description: "Your project is now set up and ready to go!",
+          });
+          // Navigate to spec view to show the new spec
+          setCurrentView("spec");
+        } else if (event.type === "spec_regeneration_error") {
+          setIsCreatingSpec(false);
+          setCreatingSpecProjectPath(null);
+          toast.error("Failed to create specification", {
+            description: event.error,
+          });
+        }
+      }
+    );
+
+    return () => {
+      unsubscribe();
+    };
+  }, [setCurrentView]);
+
+  // Handle creating initial spec for new project
+  const handleCreateInitialSpec = useCallback(async () => {
+    if (!setupProjectPath || !projectOverview.trim()) return;
+
+    setIsCreatingSpec(true);
+    setCreatingSpecProjectPath(setupProjectPath);
+    setShowSpecIndicator(true);
+    setShowSetupDialog(false);
+
+    try {
+      const api = getElectronAPI();
+      if (!api.specRegeneration) {
+        toast.error("Spec regeneration not available");
+        setIsCreatingSpec(false);
+        setCreatingSpecProjectPath(null);
+        return;
+      }
+      const result = await api.specRegeneration.create(
+        setupProjectPath,
+        projectOverview.trim(),
+        generateFeatures
+      );
+
+      if (!result.success) {
+        console.error("[Sidebar] Failed to start spec creation:", result.error);
+        setIsCreatingSpec(false);
+        setCreatingSpecProjectPath(null);
+        toast.error("Failed to create specification", {
+          description: result.error,
+        });
+      }
+      // If successful, we'll wait for the events to update the state
+    } catch (error) {
+      console.error("[Sidebar] Failed to create spec:", error);
+      setIsCreatingSpec(false);
+      setCreatingSpecProjectPath(null);
+      toast.error("Failed to create specification", {
+        description: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  }, [setupProjectPath, projectOverview]);
+
+  // Handle skipping setup
+  const handleSkipSetup = useCallback(() => {
+    setShowSetupDialog(false);
+    setProjectOverview("");
+    setSetupProjectPath("");
+    toast.info("Setup skipped", {
+      description: "You can set up your app_spec.txt later from the Spec view.",
+    });
+  }, []);
+
   /**
    * Opens the system folder selection dialog and initializes the selected project.
    * Used by both the 'O' keyboard shortcut and the folder icon button.
@@ -210,6 +321,9 @@ export function Sidebar() {
       const name = path.split("/").pop() || "Untitled Project";
 
       try {
+        // Check if this is a brand new project (no .automaker directory)
+        const hadAutomakerDir = await hasAutomakerDir(path);
+
         // Initialize the .automaker directory structure
         const initResult = await initializeProject(path);
 
@@ -230,7 +344,20 @@ export function Sidebar() {
         addProject(project);
         setCurrentProject(project);
 
-        if (initResult.createdFiles && initResult.createdFiles.length > 0) {
+        // Check if app_spec.txt exists
+        const specExists = await hasAppSpec(path);
+
+        if (!hadAutomakerDir && !specExists) {
+          // This is a brand new project - show setup dialog
+          setSetupProjectPath(path);
+          setShowSetupDialog(true);
+          toast.success("Project opened", {
+            description: `Opened ${name}. Let's set up your app specification!`,
+          });
+        } else if (
+          initResult.createdFiles &&
+          initResult.createdFiles.length > 0
+        ) {
           toast.success(
             initResult.isNewProject ? "Project initialized" : "Project updated",
             {
@@ -422,6 +549,20 @@ export function Sidebar() {
       });
     }
 
+    // Project cycling shortcuts - only when we have project history
+    if (projectHistory.length > 1) {
+      shortcuts.push({
+        key: ACTION_SHORTCUTS.cyclePrevProject,
+        action: () => cyclePrevProject(),
+        description: "Cycle to previous project (MRU)",
+      });
+      shortcuts.push({
+        key: ACTION_SHORTCUTS.cycleNextProject,
+        action: () => cycleNextProject(),
+        description: "Cycle to next project (LRU)",
+      });
+    }
+
     // Only enable nav shortcuts if there's a current project
     if (currentProject) {
       navSections.forEach((section) => {
@@ -451,6 +592,9 @@ export function Sidebar() {
     toggleSidebar,
     projects.length,
     handleOpenFolder,
+    projectHistory.length,
+    cyclePrevProject,
+    cycleNextProject,
   ]);
 
   // Register keyboard shortcuts
@@ -464,7 +608,7 @@ export function Sidebar() {
     <aside
       className={cn(
         "flex-shrink-0 border-r border-sidebar-border bg-sidebar backdrop-blur-md flex flex-col z-30 transition-all duration-300 relative",
-        sidebarOpen ? "w-16 lg:w-60" : "w-16"
+        sidebarOpen ? "w-16 lg:w-72" : "w-16"
       )}
       data-testid="sidebar"
     >
@@ -566,16 +710,16 @@ export function Sidebar() {
           </div>
         )}
 
-        {/* Project Selector */}
+        {/* Project Selector with Cycle Buttons */}
         {sidebarOpen && projects.length > 0 && (
-          <div className="px-2 mt-3">
+          <div className="px-2 mt-3 flex items-center gap-1.5">
             <DropdownMenu
               open={isProjectPickerOpen}
               onOpenChange={setIsProjectPickerOpen}
             >
               <DropdownMenuTrigger asChild>
                 <button
-                  className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg bg-sidebar-accent/10 border border-sidebar-border hover:bg-sidebar-accent/20 transition-all text-foreground titlebar-no-drag"
+                  className="flex-1 flex items-center justify-between px-3 py-2.5 rounded-lg bg-sidebar-accent/10 border border-sidebar-border hover:bg-sidebar-accent/20 transition-all text-foreground titlebar-no-drag min-w-0"
                   data-testid="project-selector"
                 >
                   <div className="flex items-center gap-2 flex-1 min-w-0">
@@ -625,6 +769,34 @@ export function Sidebar() {
                 </DndContext>
               </DropdownMenuContent>
             </DropdownMenu>
+
+            {/* Project Cycle Buttons - only show when there's history */}
+            {projectHistory.length > 1 && (
+              <div className="hidden lg:flex items-center gap-1">
+                <button
+                  onClick={cyclePrevProject}
+                  className="flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-sidebar-accent/50 border border-sidebar-border transition-all titlebar-no-drag group relative"
+                  title={`Previous project (${ACTION_SHORTCUTS.cyclePrevProject})`}
+                  data-testid="cycle-prev-project"
+                >
+                  <RotateCcw className="w-4 h-4" />
+                  <span className="absolute -bottom-5 px-1 py-0.5 text-[9px] font-mono rounded bg-sidebar-accent/20 border border-sidebar-border text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                    {ACTION_SHORTCUTS.cyclePrevProject}
+                  </span>
+                </button>
+                <button
+                  onClick={cycleNextProject}
+                  className="flex items-center justify-center w-8 h-8 rounded-lg text-muted-foreground hover:text-foreground hover:bg-sidebar-accent/50 border border-sidebar-border transition-all titlebar-no-drag group relative"
+                  title={`Next project (${ACTION_SHORTCUTS.cycleNextProject})`}
+                  data-testid="cycle-next-project"
+                >
+                  <RotateCw className="w-4 h-4" />
+                  <span className="absolute -bottom-5 px-1 py-0.5 text-[9px] font-mono rounded bg-sidebar-accent/20 border border-sidebar-border text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity z-10">
+                    {ACTION_SHORTCUTS.cycleNextProject}
+                  </span>
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -865,6 +1037,103 @@ export function Sidebar() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* New Project Setup Dialog */}
+      <Dialog
+        open={showSetupDialog}
+        onOpenChange={(open) => {
+          if (!open && !isCreatingSpec) {
+            handleSkipSetup();
+          }
+        }}
+      >
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Set Up Your Project</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              We didn&apos;t find an app_spec.txt file. Let us help you generate
+              your app_spec.txt to help describe your project for our system.
+              We&apos;ll analyze your project&apos;s tech stack and create a
+              comprehensive specification.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Project Overview</label>
+              <p className="text-xs text-muted-foreground">
+                Describe what your project does and what features you want to
+                build. Be as detailed as you want - this will help us create a
+                better specification.
+              </p>
+              <textarea
+                className="w-full h-48 p-3 rounded-md border border-border bg-background font-mono text-sm resize-none focus:outline-none focus:ring-2 focus:ring-ring"
+                value={projectOverview}
+                onChange={(e) => setProjectOverview(e.target.value)}
+                placeholder="e.g., A project management tool that allows teams to track tasks, manage sprints, and visualize progress through kanban boards. It should support user authentication, real-time updates, and file attachments..."
+                autoFocus
+              />
+            </div>
+
+            <div className="flex items-start space-x-3 pt-2">
+              <Checkbox
+                id="sidebar-generate-features"
+                checked={generateFeatures}
+                onCheckedChange={(checked) =>
+                  setGenerateFeatures(checked === true)
+                }
+              />
+              <div className="space-y-1">
+                <label
+                  htmlFor="sidebar-generate-features"
+                  className="text-sm font-medium cursor-pointer"
+                >
+                  Generate feature list
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  Automatically populate feature_list.json with all features
+                  from the implementation roadmap after the spec is generated.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="ghost" onClick={handleSkipSetup}>
+              Skip for now
+            </Button>
+            <Button
+              onClick={handleCreateInitialSpec}
+              disabled={!projectOverview.trim()}
+            >
+              <Sparkles className="w-4 h-4 mr-2" />
+              Generate Spec
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Spec Creation Indicator - Bottom Right Toast */}
+      {isCreatingSpec &&
+        showSpecIndicator &&
+        currentProject?.path === creatingSpecProjectPath && (
+          <div className="fixed bottom-4 right-4 z-50 flex items-center gap-3 bg-card border border-border rounded-lg shadow-lg p-4 max-w-sm">
+            <Loader2 className="w-5 h-5 animate-spin text-primary flex-shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium">Creating App Specification</p>
+              <p className="text-xs text-muted-foreground truncate">
+                Working on your project...
+              </p>
+            </div>
+            <button
+              onClick={() => setShowSpecIndicator(false)}
+              className="p-1 hover:bg-muted rounded-md transition-colors flex-shrink-0"
+              aria-label="Dismiss notification"
+            >
+              <X className="w-4 h-4 text-muted-foreground" />
+            </button>
+          </div>
+        )}
     </aside>
   );
 }

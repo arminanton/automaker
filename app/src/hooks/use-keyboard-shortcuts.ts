@@ -102,7 +102,7 @@ export function useKeyboardShortcuts(shortcuts: KeyboardShortcut[]) {
 export const NAV_SHORTCUTS: Record<string, string> = {
   board: "K", // K for Kanban
   agent: "A", // A for Agent
-  spec: "E", // E for Editor (Spec)
+  spec: "D", // D for Document (Spec)
   context: "C", // C for Context
   tools: "T", // T for Tools
   settings: "S", // S for Settings
@@ -121,8 +121,10 @@ export const UI_SHORTCUTS: Record<string, string> = {
 export const ACTION_SHORTCUTS: Record<string, string> = {
   addFeature: "N", // N for New feature
   addContextFile: "F", // F for File (add context file)
-  startNext: "Q", // Q for Queue (start next features from backlog)
+  startNext: "G", // G for Grab (start next features from backlog)
   newSession: "W", // W for new session (in agent view)
   openProject: "O", // O for Open project (navigate to welcome view)
   projectPicker: "P", // P for Project picker
+  cyclePrevProject: "Q", // Q for previous project (cycle back through MRU)
+  cycleNextProject: "E", // E for next project (cycle forward through MRU)
 };

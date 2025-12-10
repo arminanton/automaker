@@ -139,6 +139,58 @@ contextBridge.exposeInMainWorld("electronAPI", {
       };
     },
   },
+
+  // Feature Suggestions API
+  suggestions: {
+    // Generate feature suggestions
+    generate: (projectPath) =>
+      ipcRenderer.invoke("suggestions:generate", { projectPath }),
+
+    // Stop generating suggestions
+    stop: () => ipcRenderer.invoke("suggestions:stop"),
+
+    // Get suggestions status
+    status: () => ipcRenderer.invoke("suggestions:status"),
+
+    // Listen for suggestions events
+    onEvent: (callback) => {
+      const subscription = (_, data) => callback(data);
+      ipcRenderer.on("suggestions:event", subscription);
+
+      // Return unsubscribe function
+      return () => {
+        ipcRenderer.removeListener("suggestions:event", subscription);
+      };
+    },
+  },
+
+  // Spec Regeneration API
+  specRegeneration: {
+    // Create initial app spec for a new project
+    create: (projectPath, projectOverview, generateFeatures = true) =>
+      ipcRenderer.invoke("spec-regeneration:create", { projectPath, projectOverview, generateFeatures }),
+
+    // Regenerate the app spec
+    generate: (projectPath, projectDefinition) =>
+      ipcRenderer.invoke("spec-regeneration:generate", { projectPath, projectDefinition }),
+
+    // Stop regenerating spec
+    stop: () => ipcRenderer.invoke("spec-regeneration:stop"),
+
+    // Get regeneration status
+    status: () => ipcRenderer.invoke("spec-regeneration:status"),
+
+    // Listen for regeneration events
+    onEvent: (callback) => {
+      const subscription = (_, data) => callback(data);
+      ipcRenderer.on("spec-regeneration:event", subscription);
+
+      // Return unsubscribe function
+      return () => {
+        ipcRenderer.removeListener("spec-regeneration:event", subscription);
+      };
+    },
+  },
 });
 
 // Also expose a flag to detect if we're in Electron

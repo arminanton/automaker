@@ -1,17 +1,15 @@
-import { useEffect, useCallback } from "react";
+import { useEffect, useCallback, useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { useAppStore } from "@/store/app-store";
-import { getElectronAPI } from "@/lib/electron";
-import type { AutoModeEvent } from "@/types/electron";
+import { getElectronAPI, type AutoModeEvent } from "@/lib/electron";
 
 /**
- * Hook for managing auto mode
+ * Hook for managing auto mode (scoped per project)
  */
 export function useAutoMode() {
   const {
-    isAutoModeRunning,
+    autoModeByProject,
     setAutoModeRunning,
-    runningAutoTasks,
     addRunningTask,
     removeRunningTask,
     clearRunningTasks,
@@ -20,9 +18,8 @@ export function useAutoMode() {
     maxConcurrency,
   } = useAppStore(
     useShallow((state) => ({
-      isAutoModeRunning: state.isAutoModeRunning,
+      autoModeByProject: state.autoModeByProject,
       setAutoModeRunning: state.setAutoModeRunning,
-      runningAutoTasks: state.runningAutoTasks,
       addRunningTask: state.addRunningTask,
       removeRunningTask: state.removeRunningTask,
       clearRunningTasks: state.clearRunningTasks,
@@ -32,56 +29,74 @@ export function useAutoMode() {
     }))
   );
 
+  // Get project-specific auto mode state
+  const projectId = currentProject?.id;
+  const projectAutoModeState = useMemo(() => {
+    if (!projectId) return { isRunning: false, runningTasks: [] };
+    return autoModeByProject[projectId] || { isRunning: false, runningTasks: [] };
+  }, [autoModeByProject, projectId]);
+
+  const isAutoModeRunning = projectAutoModeState.isRunning;
+  const runningAutoTasks = projectAutoModeState.runningTasks;
+
   // Check if we can start a new task based on concurrency limit
   const canStartNewTask = runningAutoTasks.length < maxConcurrency;
 
   // Handle auto mode events
   useEffect(() => {
     const api = getElectronAPI();
-    if (!api?.autoMode) return;
+    if (!api?.autoMode || !projectId) return;
 
     const unsubscribe = api.autoMode.onEvent((event: AutoModeEvent) => {
       console.log("[AutoMode Event]", event);
 
+      // Events include projectId from backend, use it to scope updates
+      // Fall back to current projectId if not provided in event
+      const eventProjectId = event.projectId ?? projectId;
+
       switch (event.type) {
         case "auto_mode_feature_start":
-          addRunningTask(event.featureId);
-          addAutoModeActivity({
-            featureId: event.featureId,
-            type: "start",
-            message: `Started working on feature`,
-          });
+          if (event.featureId) {
+            addRunningTask(eventProjectId, event.featureId);
+            addAutoModeActivity({
+              featureId: event.featureId,
+              type: "start",
+              message: `Started working on feature`,
+            });
+          }
           break;
 
         case "auto_mode_feature_complete":
           // Feature completed - remove from running tasks and UI will reload features on its own
-          console.log(
-            "[AutoMode] Feature completed:",
-            event.featureId,
-            "passes:",
-            event.passes
-          );
-          removeRunningTask(event.featureId);
-          addAutoModeActivity({
-            featureId: event.featureId,
-            type: "complete",
-            message: event.passes
-              ? "Feature completed successfully"
-              : "Feature completed with failures",
-            passes: event.passes,
-          });
+          if (event.featureId) {
+            console.log(
+              "[AutoMode] Feature completed:",
+              event.featureId,
+              "passes:",
+              event.passes
+            );
+            removeRunningTask(eventProjectId, event.featureId);
+            addAutoModeActivity({
+              featureId: event.featureId,
+              type: "complete",
+              message: event.passes
+                ? "Feature completed successfully"
+                : "Feature completed with failures",
+              passes: event.passes,
+            });
+          }
           break;
 
         case "auto_mode_complete":
-          // All features completed
-          setAutoModeRunning(false);
-          clearRunningTasks();
+          // All features completed for this project
+          setAutoModeRunning(eventProjectId, false);
+          clearRunningTasks(eventProjectId);
           console.log("[AutoMode] All features completed!");
           break;
 
         case "auto_mode_error":
           console.error("[AutoMode Error]", event.error);
-          if (event.featureId) {
+          if (event.featureId && event.error) {
             addAutoModeActivity({
               featureId: event.featureId,
               type: "error",
@@ -92,7 +107,7 @@ export function useAutoMode() {
 
         case "auto_mode_progress":
           // Log progress updates (throttle to avoid spam)
-          if (event.content && event.content.length > 10) {
+          if (event.featureId && event.content && event.content.length > 10) {
             addAutoModeActivity({
               featureId: event.featureId,
               type: "progress",
@@ -103,31 +118,36 @@ export function useAutoMode() {
 
         case "auto_mode_tool":
           // Log tool usage
-          addAutoModeActivity({
-            featureId: event.featureId,
-            type: "tool",
-            message: `Using tool: ${event.tool}`,
-            tool: event.tool,
-          });
+          if (event.featureId && event.tool) {
+            addAutoModeActivity({
+              featureId: event.featureId,
+              type: "tool",
+              message: `Using tool: ${event.tool}`,
+              tool: event.tool,
+            });
+          }
           break;
 
         case "auto_mode_phase":
           // Log phase transitions (Planning, Action, Verification)
-          console.log(
-            `[AutoMode] Phase: ${event.phase} for ${event.featureId}`
-          );
-          addAutoModeActivity({
-            featureId: event.featureId,
-            type: event.phase,
-            message: event.message,
-            phase: event.phase,
-          });
+          if (event.featureId && event.phase && event.message) {
+            console.log(
+              `[AutoMode] Phase: ${event.phase} for ${event.featureId}`
+            );
+            addAutoModeActivity({
+              featureId: event.featureId,
+              type: event.phase,
+              message: event.message,
+              phase: event.phase,
+            });
+          }
           break;
       }
     });
 
     return unsubscribe;
   }, [
+    projectId,
     addRunningTask,
     removeRunningTask,
     clearRunningTasks,
@@ -151,7 +171,7 @@ export function useAutoMode() {
       const result = await api.autoMode.start(currentProject.path, maxConcurrency);
 
       if (result.success) {
-        setAutoModeRunning(true);
+        setAutoModeRunning(currentProject.id, true);
         console.log(`[AutoMode] Started successfully with maxConcurrency: ${maxConcurrency}`);
       } else {
         console.error("[AutoMode] Failed to start:", result.error);
@@ -159,13 +179,20 @@ export function useAutoMode() {
       }
     } catch (error) {
       console.error("[AutoMode] Error starting:", error);
-      setAutoModeRunning(false);
+      if (currentProject) {
+        setAutoModeRunning(currentProject.id, false);
+      }
       throw error;
     }
   }, [currentProject, setAutoModeRunning, maxConcurrency]);
 
   // Stop auto mode
   const stop = useCallback(async () => {
+    if (!currentProject) {
+      console.error("No project selected");
+      return;
+    }
+
     try {
       const api = getElectronAPI();
       if (!api?.autoMode) {
@@ -175,8 +202,8 @@ export function useAutoMode() {
       const result = await api.autoMode.stop();
 
       if (result.success) {
-        setAutoModeRunning(false);
-        clearRunningTasks();
+        setAutoModeRunning(currentProject.id, false);
+        clearRunningTasks(currentProject.id);
         console.log("[AutoMode] Stopped successfully");
       } else {
         console.error("[AutoMode] Failed to stop:", result.error);
@@ -186,11 +213,16 @@ export function useAutoMode() {
       console.error("[AutoMode] Error stopping:", error);
       throw error;
     }
-  }, [setAutoModeRunning, clearRunningTasks]);
+  }, [currentProject, setAutoModeRunning, clearRunningTasks]);
 
   // Stop a specific feature
   const stopFeature = useCallback(
     async (featureId: string) => {
+      if (!currentProject) {
+        console.error("No project selected");
+        return;
+      }
+
       try {
         const api = getElectronAPI();
         if (!api?.autoMode?.stopFeature) {
@@ -200,7 +232,7 @@ export function useAutoMode() {
         const result = await api.autoMode.stopFeature(featureId);
 
         if (result.success) {
-          removeRunningTask(featureId);
+          removeRunningTask(currentProject.id, featureId);
           console.log("[AutoMode] Feature stopped successfully:", featureId);
           addAutoModeActivity({
             featureId,
@@ -217,7 +249,7 @@ export function useAutoMode() {
         throw error;
       }
     },
-    [removeRunningTask, addAutoModeActivity]
+    [currentProject, removeRunningTask, addAutoModeActivity]
   );
 
   return {

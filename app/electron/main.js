@@ -7,6 +7,8 @@ const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 const fs = require("fs/promises");
 const agentService = require("./agent-service");
 const autoModeService = require("./auto-mode-service");
+const featureSuggestionsService = require("./services/feature-suggestions-service");
+const specRegenerationService = require("./services/spec-regeneration-service");
 
 let mainWindow = null;
 
@@ -665,6 +667,227 @@ ipcMain.handle(
       });
     } catch (error) {
       console.error("[IPC] auto-mode:commit-feature error:", error);
+      return { success: false, error: error.message };
+    }
+  }
+);
+
+// ============================================================================
+// Feature Suggestions IPC Handlers
+// ============================================================================
+
+// Track running suggestions analysis
+let suggestionsExecution = null;
+
+/**
+ * Generate feature suggestions by analyzing the project
+ */
+ipcMain.handle(
+  "suggestions:generate",
+  async (_, { projectPath }) => {
+    console.log("[IPC] suggestions:generate called with:", { projectPath });
+
+    try {
+      // Check if already running
+      if (suggestionsExecution && suggestionsExecution.isActive()) {
+        return { success: false, error: "Suggestions generation is already running" };
+      }
+
+      // Create execution context
+      suggestionsExecution = {
+        abortController: null,
+        query: null,
+        isActive: () => suggestionsExecution !== null,
+      };
+
+      const sendToRenderer = (data) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("suggestions:event", data);
+        }
+      };
+
+      // Start generating suggestions (runs in background)
+      featureSuggestionsService
+        .generateSuggestions(projectPath, sendToRenderer, suggestionsExecution)
+        .catch((error) => {
+          console.error("[IPC] suggestions:generate background error:", error);
+          sendToRenderer({
+            type: "suggestions_error",
+            error: error.message,
+          });
+        })
+        .finally(() => {
+          suggestionsExecution = null;
+        });
+
+      // Return immediately
+      return { success: true };
+    } catch (error) {
+      console.error("[IPC] suggestions:generate error:", error);
+      suggestionsExecution = null;
+      return { success: false, error: error.message };
+    }
+  }
+);
+
+/**
+ * Stop the current suggestions generation
+ */
+ipcMain.handle("suggestions:stop", async () => {
+  console.log("[IPC] suggestions:stop called");
+  try {
+    if (suggestionsExecution && suggestionsExecution.abortController) {
+      suggestionsExecution.abortController.abort();
+    }
+    suggestionsExecution = null;
+    return { success: true };
+  } catch (error) {
+    console.error("[IPC] suggestions:stop error:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Get suggestions generation status
+ */
+ipcMain.handle("suggestions:status", () => {
+  return {
+    success: true,
+    isRunning: suggestionsExecution !== null && suggestionsExecution.isActive(),
+  };
+});
+
+// ============================================================================
+// Spec Regeneration IPC Handlers
+// ============================================================================
+
+// Track running spec regeneration
+let specRegenerationExecution = null;
+
+/**
+ * Regenerate the app spec based on project definition
+ */
+ipcMain.handle(
+  "spec-regeneration:generate",
+  async (_, { projectPath, projectDefinition }) => {
+    console.log("[IPC] spec-regeneration:generate called with:", { projectPath });
+
+    try {
+      // Check if already running
+      if (specRegenerationExecution && specRegenerationExecution.isActive()) {
+        return { success: false, error: "Spec regeneration is already running" };
+      }
+
+      // Create execution context
+      specRegenerationExecution = {
+        abortController: null,
+        query: null,
+        isActive: () => specRegenerationExecution !== null,
+      };
+
+      const sendToRenderer = (data) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("spec-regeneration:event", data);
+        }
+      };
+
+      // Start regenerating spec (runs in background)
+      specRegenerationService
+        .regenerateSpec(projectPath, projectDefinition, sendToRenderer, specRegenerationExecution)
+        .catch((error) => {
+          console.error("[IPC] spec-regeneration:generate background error:", error);
+          sendToRenderer({
+            type: "spec_regeneration_error",
+            error: error.message,
+          });
+        })
+        .finally(() => {
+          specRegenerationExecution = null;
+        });
+
+      // Return immediately
+      return { success: true };
+    } catch (error) {
+      console.error("[IPC] spec-regeneration:generate error:", error);
+      specRegenerationExecution = null;
+      return { success: false, error: error.message };
+    }
+  }
+);
+
+/**
+ * Stop the current spec regeneration
+ */
+ipcMain.handle("spec-regeneration:stop", async () => {
+  console.log("[IPC] spec-regeneration:stop called");
+  try {
+    if (specRegenerationExecution && specRegenerationExecution.abortController) {
+      specRegenerationExecution.abortController.abort();
+    }
+    specRegenerationExecution = null;
+    return { success: true };
+  } catch (error) {
+    console.error("[IPC] spec-regeneration:stop error:", error);
+    return { success: false, error: error.message };
+  }
+});
+
+/**
+ * Get spec regeneration status
+ */
+ipcMain.handle("spec-regeneration:status", () => {
+  return {
+    success: true,
+    isRunning: specRegenerationExecution !== null && specRegenerationExecution.isActive(),
+  };
+});
+
+/**
+ * Create initial app spec for a new project
+ */
+ipcMain.handle(
+  "spec-regeneration:create",
+  async (_, { projectPath, projectOverview, generateFeatures = true }) => {
+    console.log("[IPC] spec-regeneration:create called with:", { projectPath, generateFeatures });
+
+    try {
+      // Check if already running
+      if (specRegenerationExecution && specRegenerationExecution.isActive()) {
+        return { success: false, error: "Spec creation is already running" };
+      }
+
+      // Create execution context
+      specRegenerationExecution = {
+        abortController: null,
+        query: null,
+        isActive: () => specRegenerationExecution !== null,
+      };
+
+      const sendToRenderer = (data) => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("spec-regeneration:event", data);
+        }
+      };
+
+      // Start creating spec (runs in background)
+      specRegenerationService
+        .createInitialSpec(projectPath, projectOverview, sendToRenderer, specRegenerationExecution, generateFeatures)
+        .catch((error) => {
+          console.error("[IPC] spec-regeneration:create background error:", error);
+          sendToRenderer({
+            type: "spec_regeneration_error",
+            error: error.message,
+          });
+        })
+        .finally(() => {
+          specRegenerationExecution = null;
+        });
+
+      // Return immediately
+      return { success: true };
+    } catch (error) {
+      console.error("[IPC] spec-regeneration:create error:", error);
+      specRegenerationExecution = null;
       return { success: false, error: error.message };
     }
   }

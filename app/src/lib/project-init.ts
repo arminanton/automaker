@@ -16,46 +16,22 @@ export interface ProjectInitResult {
 }
 
 /**
- * Default app_spec.txt template for new projects
- */
-const DEFAULT_APP_SPEC = `<project_specification>
-  <project_name>Untitled Project</project_name>
-
-  <overview>
-    Describe your project here. This file will be analyzed by an AI agent
-    to understand your project structure and tech stack.
-  </overview>
-
-  <technology_stack>
-    <!-- The AI agent will fill this in after analyzing your project -->
-  </technology_stack>
-
-  <core_capabilities>
-    <!-- List core features and capabilities -->
-  </core_capabilities>
-
-  <implemented_features>
-    <!-- The AI agent will populate this based on code analysis -->
-  </implemented_features>
-</project_specification>
-`;
-
-/**
  * Default feature_list.json template for new projects
  */
 const DEFAULT_FEATURE_LIST = JSON.stringify([], null, 2);
 
 /**
  * Required files and directories in the .automaker directory
+ * Note: app_spec.txt is NOT created automatically - user must set it up via the spec editor
  */
 const REQUIRED_STRUCTURE = {
   directories: [
     ".automaker",
     ".automaker/context",
     ".automaker/agents-context",
+    ".automaker/images",
   ],
   files: {
-    ".automaker/app_spec.txt": DEFAULT_APP_SPEC,
     ".automaker/feature_list.json": DEFAULT_FEATURE_LIST,
   },
 };
@@ -184,5 +160,39 @@ export async function getProjectInitStatus(projectPath: string): Promise<{
       missingFiles: Object.keys(REQUIRED_STRUCTURE.files),
       existingFiles: [],
     };
+  }
+}
+
+/**
+ * Checks if the app_spec.txt file exists for a project
+ *
+ * @param projectPath - The root path of the project
+ * @returns true if app_spec.txt exists
+ */
+export async function hasAppSpec(projectPath: string): Promise<boolean> {
+  const api = getElectronAPI();
+  try {
+    const fullPath = `${projectPath}/.automaker/app_spec.txt`;
+    return await api.exists(fullPath);
+  } catch (error) {
+    console.error("[project-init] Error checking app_spec.txt:", error);
+    return false;
+  }
+}
+
+/**
+ * Checks if the .automaker directory exists for a project
+ *
+ * @param projectPath - The root path of the project
+ * @returns true if .automaker directory exists
+ */
+export async function hasAutomakerDir(projectPath: string): Promise<boolean> {
+  const api = getElectronAPI();
+  try {
+    const fullPath = `${projectPath}/.automaker`;
+    return await api.exists(fullPath);
+  } catch (error) {
+    console.error("[project-init] Error checking .automaker dir:", error);
+    return false;
   }
 }

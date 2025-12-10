@@ -162,22 +162,26 @@ export type AutoModeEvent =
   | {
       type: "auto_mode_feature_start";
       featureId: string;
+      projectId?: string;
       feature: unknown;
     }
   | {
       type: "auto_mode_progress";
       featureId: string;
+      projectId?: string;
       content: string;
     }
   | {
       type: "auto_mode_tool";
       featureId: string;
+      projectId?: string;
       tool: string;
       input: unknown;
     }
   | {
       type: "auto_mode_feature_complete";
       featureId: string;
+      projectId?: string;
       passes: boolean;
       message: string;
     }
@@ -185,17 +189,71 @@ export type AutoModeEvent =
       type: "auto_mode_error";
       error: string;
       featureId?: string;
+      projectId?: string;
     }
   | {
       type: "auto_mode_complete";
       message: string;
+      projectId?: string;
     }
   | {
       type: "auto_mode_phase";
       featureId: string;
+      projectId?: string;
       phase: "planning" | "action" | "verification";
       message: string;
     };
+
+export type SpecRegenerationEvent =
+  | {
+      type: "spec_regeneration_progress";
+      content: string;
+    }
+  | {
+      type: "spec_regeneration_tool";
+      tool: string;
+      input: unknown;
+    }
+  | {
+      type: "spec_regeneration_complete";
+      message: string;
+    }
+  | {
+      type: "spec_regeneration_error";
+      error: string;
+    };
+
+export interface SpecRegenerationAPI {
+  create: (
+    projectPath: string,
+    projectOverview: string,
+    generateFeatures?: boolean
+  ) => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
+
+  generate: (
+    projectPath: string,
+    projectDefinition: string
+  ) => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
+
+  stop: () => Promise<{
+    success: boolean;
+    error?: string;
+  }>;
+
+  status: () => Promise<{
+    success: boolean;
+    isRunning?: boolean;
+    error?: string;
+  }>;
+
+  onEvent: (callback: (event: SpecRegenerationEvent) => void) => () => void;
+}
 
 export interface AutoModeAPI {
   start: (projectPath: string) => Promise<{
@@ -316,6 +374,9 @@ export interface ElectronAPI {
 
   // Auto Mode APIs
   autoMode: AutoModeAPI;
+
+  // Spec Regeneration APIs
+  specRegeneration: SpecRegenerationAPI;
 }
 
 declare global {

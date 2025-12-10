@@ -371,7 +371,7 @@ export function ContextView() {
             <Plus className="w-4 h-4 mr-2" />
             Add File
             <span
-              className="ml-2 px-1.5 py-0.5 text-[10px] font-mono rounded bg-white/10 border border-white/20"
+              className="ml-2 px-1.5 py-0.5 text-[10px] font-mono rounded bg-secondary border border-border"
               data-testid="shortcut-add-context-file"
             >
               {ACTION_SHORTCUTS.addContextFile}
@@ -387,9 +387,9 @@ export function ContextView() {
         onDragOver={handleDragOver}
       >
         {/* Left Panel - File List */}
-        <div className="w-64 border-r border-white/10 flex flex-col overflow-hidden">
-          <div className="p-3 border-b border-white/10">
-            <h2 className="text-sm font-semibold text-zinc-400">
+        <div className="w-64 border-r border-border flex flex-col overflow-hidden">
+          <div className="p-3 border-b border-border">
+            <h2 className="text-sm font-semibold text-muted-foreground">
               Context Files ({contextFiles.length})
             </h2>
           </div>
@@ -399,8 +399,8 @@ export function ContextView() {
           >
             {contextFiles.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center p-4">
-                <Upload className="w-8 h-8 text-zinc-500 mb-2" />
-                <p className="text-sm text-zinc-500">
+                <Upload className="w-8 h-8 text-muted-foreground mb-2" />
+                <p className="text-sm text-muted-foreground">
                   No context files yet.
                   <br />
                   Drop files here or click Add File.
@@ -415,8 +415,8 @@ export function ContextView() {
                     className={cn(
                       "w-full flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-colors",
                       selectedFile?.path === file.path
-                        ? "bg-brand-500/20 text-white border border-brand-500/30"
-                        : "text-zinc-400 hover:bg-white/5 hover:text-white"
+                        ? "bg-primary/20 text-foreground border border-primary/30"
+                        : "text-muted-foreground hover:bg-accent hover:text-foreground"
                     )}
                     data-testid={`context-file-${file.name}`}
                   >
@@ -438,12 +438,12 @@ export function ContextView() {
           {selectedFile ? (
             <>
               {/* File toolbar */}
-              <div className="flex items-center justify-between p-3 border-b border-white/10 bg-zinc-900/50">
+              <div className="flex items-center justify-between p-3 border-b border-border bg-card">
                 <div className="flex items-center gap-2">
                   {selectedFile.type === "image" ? (
-                    <ImageIcon className="w-4 h-4 text-zinc-400" />
+                    <ImageIcon className="w-4 h-4 text-muted-foreground" />
                   ) : (
-                    <FileText className="w-4 h-4 text-zinc-400" />
+                    <FileText className="w-4 h-4 text-muted-foreground" />
                   )}
                   <span className="text-sm font-medium">
                     {selectedFile.name}
@@ -477,7 +477,7 @@ export function ContextView() {
               <div className="flex-1 overflow-hidden p-4">
                 {selectedFile.type === "image" ? (
                   <div
-                    className="h-full flex items-center justify-center bg-zinc-900/50 rounded-lg"
+                    className="h-full flex items-center justify-center bg-card rounded-lg"
                     data-testid="image-preview"
                   >
                     <img
@@ -503,9 +503,9 @@ export function ContextView() {
           ) : (
             <div className="flex-1 flex items-center justify-center">
               <div className="text-center">
-                <File className="w-12 h-12 text-zinc-600 mx-auto mb-3" />
-                <p className="text-zinc-500">Select a file to view or edit</p>
-                <p className="text-zinc-600 text-sm mt-1">
+                <File className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
+                <p className="text-foreground-secondary">Select a file to view or edit</p>
+                <p className="text-muted-foreground text-sm mt-1">
                   Or drop files here to add them
                 </p>
               </div>
@@ -516,7 +516,10 @@ export function ContextView() {
 
       {/* Add File Dialog */}
       <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-        <DialogContent data-testid="add-context-dialog">
+        <DialogContent
+          data-testid="add-context-dialog"
+          className="w-[60vw] max-w-[60vw] max-h-[80vh] flex flex-col"
+        >
           <DialogHeader>
             <DialogTitle>Add Context File</DialogTitle>
             <DialogDescription>
@@ -564,7 +567,7 @@ export function ContextView() {
                 <div
                   className={cn(
                     "relative rounded-lg transition-colors",
-                    isDropHovering && "ring-2 ring-brand-500"
+                    isDropHovering && "ring-2 ring-primary"
                   )}
                 >
                   <textarea
@@ -576,15 +579,15 @@ export function ContextView() {
                     onDragLeave={handleTextAreaDragLeave}
                     placeholder="Enter context content here or drag & drop a .txt or .md file..."
                     className={cn(
-                      "w-full h-40 p-3 font-mono text-sm bg-zinc-900 border border-zinc-700 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent",
-                      isDropHovering && "border-brand-500 bg-brand-500/10"
+                      "w-full h-40 p-3 font-mono text-sm bg-background border border-border rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-ring focus:border-transparent",
+                      isDropHovering && "border-primary bg-primary/10"
                     )}
                     spellCheck={false}
                     data-testid="new-file-content"
                   />
                   {isDropHovering && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-brand-500/20 rounded-lg pointer-events-none">
-                      <div className="flex flex-col items-center text-brand-400">
+                    <div className="absolute inset-0 flex items-center justify-center bg-primary/20 rounded-lg pointer-events-none">
+                      <div className="flex flex-col items-center text-primary">
                         <Upload className="w-8 h-8 mb-2" />
                         <span className="text-sm font-medium">
                           Drop .txt or .md file here
@@ -593,7 +596,7 @@ export function ContextView() {
                     </div>
                   )}
                 </div>
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-muted-foreground">
                   Drag & drop .txt or .md files to import their content
                 </p>
               </div>
@@ -602,7 +605,7 @@ export function ContextView() {
             {newFileType === "image" && (
               <div className="space-y-2">
                 <Label>Upload Image</Label>
-                <div className="border-2 border-dashed border-zinc-700 rounded-lg p-4 text-center">
+                <div className="border-2 border-dashed border-border rounded-lg p-4 text-center">
                   <input
                     type="file"
                     accept="image/*"
@@ -622,9 +625,9 @@ export function ContextView() {
                         className="max-w-32 max-h-32 object-contain mb-2"
                       />
                     ) : (
-                      <Upload className="w-8 h-8 text-zinc-500 mb-2" />
+                      <Upload className="w-8 h-8 text-muted-foreground mb-2" />
                     )}
-                    <span className="text-sm text-zinc-400">
+                    <span className="text-sm text-muted-foreground">
                       {uploadedImageData
                         ? "Click to change"
                         : "Click to upload"}

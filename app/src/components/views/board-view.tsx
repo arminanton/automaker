@@ -50,6 +50,7 @@ import {
 import { KanbanColumn } from "./kanban-column";
 import { KanbanCard } from "./kanban-card";
 import { AgentOutputModal } from "./agent-output-modal";
+import { FeatureSuggestionsDialog } from "./feature-suggestions-dialog";
 import {
   Plus,
   RefreshCw,
@@ -63,6 +64,7 @@ import {
   CheckCircle2,
   MessageSquare,
   GitCommit,
+  Lightbulb,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Slider } from "@/components/ui/slider";
@@ -92,7 +94,6 @@ export function BoardView() {
     updateFeature,
     removeFeature,
     moveFeature,
-    runningAutoTasks,
     maxConcurrency,
     setMaxConcurrency,
     defaultSkipTests,
@@ -124,6 +125,8 @@ export function BoardView() {
   const [followUpImagePaths, setFollowUpImagePaths] = useState<
     DescriptionImagePath[]
   >([]);
+  const [showSuggestionsDialog, setShowSuggestionsDialog] = useState(false);
+  const [suggestionsCount, setSuggestionsCount] = useState(0);
 
   // Make current project available globally for modal
   useEffect(() => {
@@ -135,12 +138,30 @@ export function BoardView() {
     };
   }, [currentProject]);
 
+  // Listen for suggestions events to update count
+  useEffect(() => {
+    const api = getElectronAPI();
+    if (!api?.suggestions) return;
+
+    const unsubscribe = api.suggestions.onEvent((event) => {
+      if (event.type === "suggestions_complete" && event.suggestions) {
+        setSuggestionsCount(event.suggestions.length);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   // Track previous project to detect switches
   const prevProjectPathRef = useRef<string | null>(null);
   const isSwitchingProjectRef = useRef<boolean>(false);
 
   // Auto mode hook
   const autoMode = useAutoMode();
+  // Get runningTasks from the hook (scoped to current project)
+  const runningAutoTasks = autoMode.runningTasks;
 
   // Get in-progress features for keyboard shortcuts (memoized for shortcuts)
   const inProgressFeaturesForShortcuts = useMemo(() => {
@@ -340,11 +361,15 @@ export function BoardView() {
   // Listen for auto mode feature completion and errors to reload features
   useEffect(() => {
     const api = getElectronAPI();
-    if (!api?.autoMode) return;
+    if (!api?.autoMode || !currentProject) return;
 
     const { removeRunningTask } = useAppStore.getState();
+    const projectId = currentProject.id;
 
     const unsubscribe = api.autoMode.onEvent((event) => {
+      // Use event's projectId if available, otherwise use current project
+      const eventProjectId = event.projectId || projectId;
+
       if (event.type === "auto_mode_feature_complete") {
         // Reload features when a feature is completed
         console.log("[Board] Feature completed, reloading features...");
@@ -358,7 +383,7 @@ export function BoardView() {
 
         // Remove from running tasks so it moves to the correct column
         if (event.featureId) {
-          removeRunningTask(event.featureId);
+          removeRunningTask(eventProjectId, event.featureId);
         }
 
         loadFeatures();
@@ -370,7 +395,7 @@ export function BoardView() {
     });
 
     return unsubscribe;
-  }, [loadFeatures]);
+  }, [loadFeatures, currentProject]);
 
   useEffect(() => {
     loadFeatures();
@@ -383,6 +408,8 @@ export function BoardView() {
 
   // Sync running tasks from electron backend on mount
   useEffect(() => {
+    if (!currentProject) return;
+
     const syncRunningTasks = async () => {
       try {
         const api = getElectronAPI();
@@ -395,13 +422,14 @@ export function BoardView() {
             status.runningFeatures
           );
 
-          // Clear existing running tasks and add the actual running ones
+          // Clear existing running tasks for this project and add the actual running ones
           const { clearRunningTasks, addRunningTask } = useAppStore.getState();
-          clearRunningTasks();
+          const projectId = currentProject.id;
+          clearRunningTasks(projectId);
 
           // Add each running feature to the store
           status.runningFeatures.forEach((featureId: string) => {
-            addRunningTask(featureId);
+            addRunningTask(projectId, featureId);
           });
         }
       } catch (error) {
@@ -410,7 +438,7 @@ export function BoardView() {
     };
 
     syncRunningTasks();
-  }, []);
+  }, [currentProject]);
 
   // Check which features have context files
   useEffect(() => {
@@ -1272,21 +1300,42 @@ export function BoardView() {
                           <Trash2 className="w-3 h-3 mr-1" />
                           Delete All
                         </Button>
-                      ) : column.id === "backlog" &&
-                        columnFeatures.length > 0 ? (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="h-6 px-2 text-xs text-primary hover:text-primary hover:bg-primary/10"
-                          onClick={handleStartNextFeatures}
-                          data-testid="start-next-button"
-                        >
-                          <FastForward className="w-3 h-3 mr-1" />
-                          Start Next
-                          <span className="ml-1 px-1 py-0.5 text-[9px] font-mono rounded bg-white/10 border border-white/20">
-                            {ACTION_SHORTCUTS.startNext}
-                          </span>
-                        </Button>
+                      ) : column.id === "backlog" ? (
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 w-6 p-0 text-yellow-500 hover:text-yellow-400 hover:bg-yellow-500/10 relative"
+                            onClick={() => setShowSuggestionsDialog(true)}
+                            title="Feature Suggestions"
+                            data-testid="feature-suggestions-button"
+                          >
+                            <Lightbulb className="w-3.5 h-3.5" />
+                            {suggestionsCount > 0 && (
+                              <span
+                                className="absolute -top-1 -right-1 w-4 h-4 text-[9px] font-mono rounded-full bg-yellow-500 text-black flex items-center justify-center"
+                                data-testid="suggestions-count"
+                              >
+                                {suggestionsCount}
+                              </span>
+                            )}
+                          </Button>
+                          {columnFeatures.length > 0 && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-6 px-2 text-xs text-primary hover:text-primary hover:bg-primary/10"
+                              onClick={handleStartNextFeatures}
+                              data-testid="start-next-button"
+                            >
+                              <FastForward className="w-3 h-3 mr-1" />
+                              Start Next
+                              <span className="ml-1 px-1 py-0.5 text-[9px] font-mono rounded bg-white/10 border border-white/20">
+                                {ACTION_SHORTCUTS.startNext}
+                              </span>
+                            </Button>
+                          )}
+                        </div>
                       ) : undefined
                     }
                   >
@@ -1754,6 +1803,16 @@ export function BoardView() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Feature Suggestions Dialog */}
+      <FeatureSuggestionsDialog
+        open={showSuggestionsDialog}
+        onClose={() => {
+          setShowSuggestionsDialog(false);
+          // Clear the count when dialog is closed (suggestions were either imported or dismissed)
+        }}
+        projectPath={currentProject.path}
+      />
     </div>
   );
 }
