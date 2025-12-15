@@ -549,102 +549,64 @@ export const KanbanCard = memo(function KanbanCard({
             </Button>
           </div>
         )}
-        {!isCurrentAutoTask && feature.status === "waiting_approval" && (
-          <div className="absolute top-2 right-2 flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 hover:bg-white/10 text-muted-foreground hover:text-foreground"
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit();
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-              data-testid={`edit-waiting-${feature.id}`}
-              title="Edit"
-            >
-              <Edit className="w-4 h-4" />
-            </Button>
-            {onViewOutput && (
+        {!isCurrentAutoTask &&
+          (feature.status === "waiting_approval" ||
+            feature.status === "verified") && (
+            <div className="absolute top-2 right-2 flex items-center gap-1">
               <Button
                 variant="ghost"
                 size="sm"
                 className="h-6 w-6 p-0 hover:bg-white/10 text-muted-foreground hover:text-foreground"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onViewOutput();
+                  onEdit();
                 }}
                 onPointerDown={(e) => e.stopPropagation()}
-                data-testid={`logs-waiting-${feature.id}`}
-                title="Logs"
+                data-testid={`edit-${
+                  feature.status === "waiting_approval" ? "waiting" : "verified"
+                }-${feature.id}`}
+                title="Edit"
               >
-                <FileText className="w-4 h-4" />
+                <Edit className="w-4 h-4" />
               </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 hover:bg-white/10 text-muted-foreground hover:text-destructive"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDeleteClick(e);
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-              data-testid={`delete-waiting-${feature.id}`}
-              title="Delete"
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
-          </div>
-        )}
-        {!isCurrentAutoTask && feature.status === "verified" && (
-          <div className="absolute top-2 right-2 flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 hover:bg-white/10 text-muted-foreground hover:text-foreground"
-              onClick={(e) => {
-                e.stopPropagation();
-                onEdit();
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-              data-testid={`edit-verified-${feature.id}`}
-              title="Edit"
-            >
-              <Edit className="w-4 h-4" />
-            </Button>
-            {onViewOutput && (
+              {onViewOutput && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0 hover:bg-white/10 text-muted-foreground hover:text-foreground"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onViewOutput();
+                  }}
+                  onPointerDown={(e) => e.stopPropagation()}
+                  data-testid={`logs-${
+                    feature.status === "waiting_approval"
+                      ? "waiting"
+                      : "verified"
+                  }-${feature.id}`}
+                  title="Logs"
+                >
+                  <FileText className="w-4 h-4" />
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"
-                className="h-6 w-6 p-0 hover:bg-white/10 text-muted-foreground hover:text-foreground"
+                className="h-6 w-6 p-0 hover:bg-white/10 text-muted-foreground hover:text-destructive"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onViewOutput();
+                  handleDeleteClick(e);
                 }}
                 onPointerDown={(e) => e.stopPropagation()}
-                data-testid={`logs-verified-${feature.id}`}
-                title="Logs"
+                data-testid={`delete-${
+                  feature.status === "waiting_approval" ? "waiting" : "verified"
+                }-${feature.id}`}
+                title="Delete"
               >
-                <FileText className="w-4 h-4" />
+                <Trash2 className="w-4 h-4" />
               </Button>
-            )}
-            <Button
-              variant="ghost"
-              size="sm"
-              className="h-6 w-6 p-0 hover:bg-white/10 text-muted-foreground hover:text-destructive"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDeleteClick(e);
-              }}
-              onPointerDown={(e) => e.stopPropagation()}
-              data-testid={`delete-verified-${feature.id}`}
-              title="Delete"
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
-          </div>
-        )}
+            </div>
+          )}
         {!isCurrentAutoTask && feature.status === "in_progress" && (
           <div className="absolute top-2 right-2">
             <DropdownMenu>

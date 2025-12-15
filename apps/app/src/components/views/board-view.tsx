@@ -849,34 +849,12 @@ export function BoardView() {
     // Same column, nothing to do
     if (targetStatus === draggedFeature.status) return;
 
-    // Check concurrency limit before moving to in_progress (only for backlog -> in_progress and if running agent)
-    if (
-      targetStatus === "in_progress" &&
-      draggedFeature.status === "backlog" &&
-      !autoMode.canStartNewTask
-    ) {
-      console.log("[Board] Cannot start new task - at max concurrency limit");
-      toast.error("Concurrency limit reached", {
-        description: `You can only have ${autoMode.maxConcurrency} task${
-          autoMode.maxConcurrency > 1 ? "s" : ""
-        } running at a time. Wait for a task to complete or increase the limit.`,
-      });
-      return;
-    }
-
     // Handle different drag scenarios
     if (draggedFeature.status === "backlog") {
       // From backlog
       if (targetStatus === "in_progress") {
-        // Update with startedAt timestamp
-        const updates = {
-          status: targetStatus,
-          startedAt: new Date().toISOString(),
-        };
-        updateFeature(featureId, updates);
-        persistFeatureUpdate(featureId, updates);
-        console.log("[Board] Feature moved to in_progress, starting agent...");
-        await handleRunFeature(draggedFeature);
+        // Use helper function to handle concurrency check and start implementation
+        await handleStartImplementation(draggedFeature);
       } else {
         moveFeature(featureId, targetStatus);
         persistFeatureUpdate(featureId, { status: targetStatus });
@@ -1147,6 +1125,28 @@ export function BoardView() {
       // Reload to revert the UI status change
       await loadFeatures();
     }
+  };
+
+  // Helper function to start implementing a feature (from backlog to in_progress)
+  const handleStartImplementation = async (feature: Feature) => {
+    if (!autoMode.canStartNewTask) {
+      toast.error("Concurrency limit reached", {
+        description: `You can only have ${autoMode.maxConcurrency} task${
+          autoMode.maxConcurrency > 1 ? "s" : ""
+        } running at a time. Wait for a task to complete or increase the limit.`,
+      });
+      return false;
+    }
+
+    const updates = {
+      status: "in_progress" as const,
+      startedAt: new Date().toISOString(),
+    };
+    updateFeature(feature.id, updates);
+    persistFeatureUpdate(feature.id, updates);
+    console.log("[Board] Feature moved to in_progress, starting agent...");
+    await handleRunFeature(feature);
+    return true;
   };
 
   const handleVerifyFeature = async (feature: Feature) => {
@@ -2187,30 +2187,9 @@ export function BoardView() {
                                 onComplete={() =>
                                   handleCompleteFeature(feature)
                                 }
-                                onImplement={async () => {
-                                  // Check concurrency limit
-                                  if (!autoMode.canStartNewTask) {
-                                    toast.error("Concurrency limit reached", {
-                                      description: `You can only have ${
-                                        autoMode.maxConcurrency
-                                      } task${
-                                        autoMode.maxConcurrency > 1 ? "s" : ""
-                                      } running at a time. Wait for a task to complete or increase the limit.`,
-                                    });
-                                    return;
-                                  }
-                                  // Update with startedAt timestamp
-                                  const updates = {
-                                    status: "in_progress" as const,
-                                    startedAt: new Date().toISOString(),
-                                  };
-                                  updateFeature(feature.id, updates);
-                                  persistFeatureUpdate(feature.id, updates);
-                                  console.log(
-                                    "[Board] Feature moved to in_progress via Implement button, starting agent..."
-                                  );
-                                  await handleRunFeature(feature);
-                                }}
+                                onImplement={() =>
+                                  handleStartImplementation(feature)
+                                }
                                 hasContext={featuresWithContext.has(feature.id)}
                                 isCurrentAutoTask={runningAutoTasks.includes(
                                   feature.id
@@ -2376,9 +2355,9 @@ export function BoardView() {
             </Button>
             <Button
               variant="destructive"
-              onClick={() => {
+              onClick={async () => {
                 if (deleteCompletedFeature) {
-                  handleDeleteFeature(deleteCompletedFeature.id);
+                  await handleDeleteFeature(deleteCompletedFeature.id);
                   setDeleteCompletedFeature(null);
                 }
               }}
