@@ -12,6 +12,36 @@ const http = require("http");
 const { app, BrowserWindow, ipcMain, dialog, shell } = require("electron");
 
 /**
+ * Find latest node version from a version manager directory
+ * @param {string} baseDir - Base directory containing version folders
+ * @param {string} nodeBinPath - Relative path to node binary within version folder
+ * @param {string} managerName - Name of version manager for logging
+ * @returns {string|null} - Path to node binary or null if not found
+ */
+function findNodeFromVersionManager(baseDir, nodeBinPath, managerName) {
+  if (!fs.existsSync(baseDir)) {
+    return null;
+  }
+
+  try {
+    const versions = fs.readdirSync(baseDir);
+    // Sort semantically to get latest version first (v8.10.0 > v8.9.0)
+    versions.sort((a, b) => b.localeCompare(a, undefined, { numeric: true }));
+
+    for (const version of versions) {
+      const nodePath = path.join(baseDir, version, nodeBinPath);
+      if (fs.existsSync(nodePath)) {
+        return nodePath;
+      }
+    }
+  } catch (error) {
+    console.warn(`[Electron] Error reading ${managerName} directory:`, error.message);
+  }
+
+  return null;
+}
+
+/**
  * Find Node.js executable - handles Finder launch where PATH isn't available
  */
 function findNodeExecutable() {
@@ -23,42 +53,26 @@ function findNodeExecutable() {
     process.env.NODE_PATH ? path.join(path.dirname(process.env.NODE_PATH), "node") : null,
   ].filter(Boolean);
 
-  // Check NVM paths
   const homeDir = process.env.HOME || app.getPath("home");
-  const nvmDir = path.join(homeDir, ".nvm/versions/node");
-  if (fs.existsSync(nvmDir)) {
-    try {
-      const versions = fs.readdirSync(nvmDir);
-      // Sort to get latest version first
-      versions.sort().reverse();
-      for (const version of versions) {
-        const nodePath = path.join(nvmDir, version, "bin/node");
-        if (fs.existsSync(nodePath)) {
-          commonPaths.unshift(nodePath);
-          break;
-        }
-      }
-    } catch (error) {
-      console.warn("[Electron] Error reading NVM directory:", error.message);
-    }
+
+  // Check NVM paths
+  const nvmNode = findNodeFromVersionManager(
+    path.join(homeDir, ".nvm/versions/node"),
+    "bin/node",
+    "NVM"
+  );
+  if (nvmNode) {
+    commonPaths.unshift(nvmNode);
   }
 
   // Check fnm paths
-  const fnmDir = path.join(homeDir, ".local/share/fnm/node-versions");
-  if (fs.existsSync(fnmDir)) {
-    try {
-      const versions = fs.readdirSync(fnmDir);
-      versions.sort().reverse();
-      for (const version of versions) {
-        const nodePath = path.join(fnmDir, version, "installation/bin/node");
-        if (fs.existsSync(nodePath)) {
-          commonPaths.unshift(nodePath);
-          break;
-        }
-      }
-    } catch (error) {
-      console.warn("[Electron] Error reading fnm directory:", error.message);
-    }
+  const fnmNode = findNodeFromVersionManager(
+    path.join(homeDir, ".local/share/fnm/node-versions"),
+    "installation/bin/node",
+    "fnm"
+  );
+  if (fnmNode) {
+    commonPaths.unshift(fnmNode);
   }
 
   // Try each path
@@ -286,7 +300,7 @@ async function startServer() {
     // Add the directory containing our node executable to PATH
     const nodeDir = path.dirname(command);
     if (!enhancedPath.includes(nodeDir)) {
-      enhancedPath = `${nodeDir}:${enhancedPath}`;
+      enhancedPath = `${nodeDir}${path.delimiter}${enhancedPath}`;
     }
     console.log("[Electron] Enhanced PATH for server:", nodeDir);
   }
