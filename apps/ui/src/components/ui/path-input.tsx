@@ -212,7 +212,7 @@ function PathInput({
   // Global keyboard shortcut to activate search (/)
   useEffect(() => {
     const handleGlobalKeyDown = (e: globalThis.KeyboardEvent) => {
-      // Activate search with '/' key (unless in an input field)
+      // Activate search with '/' key (unless in an input field or contenteditable)
       if (
         e.key === '/' &&
         !isEditing &&
@@ -230,7 +230,9 @@ function PathInput({
       }
     };
 
-    window.addEventListener('keydown', handleGlobalKeyDown, true); // Use capture phase for ESC handling and prevent parent modal from closing when search is open
+    // Use capture phase to intercept ESC before parent modal handlers
+    // This allows us to close search first, then let ESC bubble to close modal on second press
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
     return () => window.removeEventListener('keydown', handleGlobalKeyDown, true);
   }, [isEditing, isSearchOpen, entries.length]);
 
@@ -250,6 +252,21 @@ function PathInput({
   }, [isSearchOpen]);
 
   const breadcrumbs = useMemo(() => parseBreadcrumbs(currentPath), [currentPath]);
+
+  const entryItems = useMemo(
+    () =>
+      entries.map((entry) => (
+        <CommandItem key={entry.path} value={entry.name} onSelect={() => handleSelectEntry(entry)}>
+          {entry.isDirectory ? (
+            <Folder className="w-3.5 h-3.5 text-brand-500 mr-2" />
+          ) : (
+            <File className="w-3.5 h-3.5 text-muted-foreground mr-2" />
+          )}
+          <span className="flex-1 truncate font-mono text-xs">{entry.name}</span>
+        </CommandItem>
+      )),
+    [entries, handleSelectEntry]
+  );
 
   const showBreadcrumbs = currentPath && !isEditing && !loading && !error;
 
@@ -314,22 +331,7 @@ function PathInput({
                   </div>
                   <CommandList className="scrollbar-styled">
                     <CommandEmpty>No files or directories found</CommandEmpty>
-                    <CommandGroup>
-                      {entries.map((entry) => (
-                        <CommandItem
-                          key={entry.path}
-                          value={entry.name}
-                          onSelect={() => handleSelectEntry(entry)}
-                        >
-                          {entry.isDirectory ? (
-                            <Folder className="w-3.5 h-3.5 text-brand-500 mr-2" />
-                          ) : (
-                            <File className="w-3.5 h-3.5 text-muted-foreground mr-2" />
-                          )}
-                          <span className="flex-1 truncate font-mono text-xs">{entry.name}</span>
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
+                    <CommandGroup>{entryItems}</CommandGroup>
                   </CommandList>
                 </Command>
               </div>
