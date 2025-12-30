@@ -124,6 +124,8 @@ export const checkAuthStatus = async (): Promise<{
 
 /**
  * Login with API key (for web mode)
+ * After login succeeds, verifies the session is actually working by making
+ * a request to an authenticated endpoint.
  */
 export const login = async (
   apiKey: string
@@ -141,6 +143,17 @@ export const login = async (
     if (data.success && data.token) {
       setSessionToken(data.token);
       console.log('[HTTP Client] Session token stored after login');
+
+      // Verify the session is actually working by making a request to an authenticated endpoint
+      const verified = await verifySession();
+      if (!verified) {
+        console.error('[HTTP Client] Login appeared successful but session verification failed');
+        return {
+          success: false,
+          error: 'Session verification failed. Please try again.',
+        };
+      }
+      console.log('[HTTP Client] Login verified successfully');
     }
 
     return data;
@@ -151,30 +164,34 @@ export const login = async (
 };
 
 /**
- * Fetch session token from server (for page refresh when cookie exists)
- * This retrieves the session token so it can be used for explicit header-based auth.
+ * Check if the session cookie is still valid by making a request to an authenticated endpoint.
+ * Note: This does NOT retrieve the session token - on page refresh we rely on cookies alone.
+ * The session token is only available after a fresh login.
  */
 export const fetchSessionToken = async (): Promise<boolean> => {
+  // On page refresh, we can't retrieve the session token (it's stored in HTTP-only cookie).
+  // We just verify the cookie is valid by checking auth status.
+  // The session token is only stored in memory after a fresh login.
   try {
-    const response = await fetch(`${getServerUrl()}/api/auth/token`, {
+    const response = await fetch(`${getServerUrl()}/api/auth/status`, {
       credentials: 'include', // Send the session cookie
     });
 
     if (!response.ok) {
-      console.log('[HTTP Client] No valid session to get token from');
+      console.log('[HTTP Client] Failed to check auth status');
       return false;
     }
 
     const data = await response.json();
-    if (data.success && data.token) {
-      setSessionToken(data.token);
-      console.log('[HTTP Client] Session token retrieved from cookie session');
+    if (data.success && data.authenticated) {
+      console.log('[HTTP Client] Session cookie is valid');
       return true;
     }
 
+    console.log('[HTTP Client] Session cookie is not authenticated');
     return false;
   } catch (error) {
-    console.error('[HTTP Client] Failed to fetch session token:', error);
+    console.error('[HTTP Client] Failed to check session:', error);
     return false;
   }
 };
@@ -197,6 +214,58 @@ export const logout = async (): Promise<{ success: boolean }> => {
   } catch (error) {
     console.error('[HTTP Client] Logout failed:', error);
     return { success: false };
+  }
+};
+
+/**
+ * Verify that the current session is still valid by making a request to an authenticated endpoint.
+ * If the session has expired or is invalid, clears the session and returns false.
+ * This should be called:
+ * 1. After login to verify the cookie was set correctly
+ * 2. On app load to verify the session hasn't expired
+ */
+export const verifySession = async (): Promise<boolean> => {
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+
+    // Add session token header if available
+    const sessionToken = getSessionToken();
+    if (sessionToken) {
+      headers['X-Session-Token'] = sessionToken;
+    }
+
+    // Make a request to an authenticated endpoint to verify the session
+    // We use /api/settings/status as it requires authentication and is lightweight
+    const response = await fetch(`${getServerUrl()}/api/settings/status`, {
+      headers,
+      credentials: 'include',
+    });
+
+    // Check for authentication errors
+    if (response.status === 401 || response.status === 403) {
+      console.warn('[HTTP Client] Session verification failed - session expired or invalid');
+      // Clear the session since it's no longer valid
+      clearSessionToken();
+      // Try to clear the cookie via logout (fire and forget)
+      fetch(`${getServerUrl()}/api/auth/logout`, {
+        method: 'POST',
+        credentials: 'include',
+      }).catch(() => {});
+      return false;
+    }
+
+    if (!response.ok) {
+      console.warn('[HTTP Client] Session verification failed with status:', response.status);
+      return false;
+    }
+
+    console.log('[HTTP Client] Session verified successfully');
+    return true;
+  } catch (error) {
+    console.error('[HTTP Client] Session verification error:', error);
+    return false;
   }
 };
 

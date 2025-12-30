@@ -9,12 +9,7 @@ import {
 import { useAppStore } from '@/store/app-store';
 import { useSetupStore } from '@/store/setup-store';
 import { getElectronAPI } from '@/lib/electron';
-import {
-  initApiKey,
-  checkAuthStatus,
-  isElectronMode,
-  fetchSessionToken,
-} from '@/lib/http-api-client';
+import { initApiKey, isElectronMode, verifySession } from '@/lib/http-api-client';
 import { Toaster } from 'sonner';
 import { ThemeOption, themeOptions } from '@/config/theme-options';
 
@@ -80,7 +75,7 @@ function RootLayoutContent() {
 
   // Initialize authentication
   // - Electron mode: Uses API key from IPC (header-based auth)
-  // - Web mode: Uses session token (fetched from cookie session for explicit header auth)
+  // - Web mode: Uses HTTP-only session cookie
   useEffect(() => {
     const initAuth = async () => {
       try {
@@ -94,29 +89,31 @@ function RootLayoutContent() {
           return;
         }
 
-        // In web mode, try to fetch session token (works if cookie is valid)
-        // This allows explicit header-based auth which works better cross-origin
-        const tokenFetched = await fetchSessionToken();
+        // In web mode, verify the session cookie is still valid
+        // by making a request to an authenticated endpoint
+        const isValid = await verifySession();
 
-        if (tokenFetched) {
-          // We have a valid session - token is now stored in memory
+        if (isValid) {
           setIsAuthenticated(true);
           setAuthChecked(true);
           return;
         }
 
-        // Fallback: check auth status via cookie
-        const status = await checkAuthStatus();
-        setIsAuthenticated(status.authenticated);
+        // Session is invalid or expired - redirect to login
+        console.log('Session invalid or expired - redirecting to login');
+        setIsAuthenticated(false);
         setAuthChecked(true);
 
-        // Redirect to login if not authenticated and not already on login page
-        if (!status.authenticated && location.pathname !== '/login') {
+        if (location.pathname !== '/login') {
           navigate({ to: '/login' });
         }
       } catch (error) {
         console.error('Failed to initialize auth:', error);
         setAuthChecked(true);
+        // On error, redirect to login to be safe
+        if (location.pathname !== '/login') {
+          navigate({ to: '/login' });
+        }
       }
     };
 

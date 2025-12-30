@@ -40,7 +40,7 @@ import {
 } from '@/config/terminal-themes';
 import { toast } from 'sonner';
 import { getElectronAPI } from '@/lib/electron';
-import { getApiKey } from '@/lib/http-api-client';
+import { getApiKey, getSessionToken } from '@/lib/http-api-client';
 
 // Font size constraints
 const MIN_FONT_SIZE = 8;
@@ -485,6 +485,40 @@ export function TerminalPanel({
 
   const serverUrl = import.meta.env.VITE_SERVER_URL || 'http://localhost:3008';
   const wsUrl = serverUrl.replace(/^http/, 'ws');
+
+  // Fetch a short-lived WebSocket token for secure authentication
+  const fetchWsToken = useCallback(async (): Promise<string | null> => {
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+
+      const sessionToken = getSessionToken();
+      if (sessionToken) {
+        headers['X-Session-Token'] = sessionToken;
+      }
+
+      const response = await fetch(`${serverUrl}/api/auth/token`, {
+        headers,
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        console.warn('[Terminal] Failed to fetch wsToken:', response.status);
+        return null;
+      }
+
+      const data = await response.json();
+      if (data.success && data.token) {
+        return data.token;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('[Terminal] Error fetching wsToken:', error);
+      return null;
+    }
+  }, [serverUrl]);
 
   // Draggable - only the drag handle triggers drag
   const {
@@ -940,7 +974,7 @@ export function TerminalPanel({
     const terminal = xtermRef.current;
     if (!terminal) return;
 
-    const connect = () => {
+    const connect = async () => {
       // Build WebSocket URL with auth params
       let url = `${wsUrl}/api/terminal/ws?sessionId=${sessionId}`;
 
@@ -948,8 +982,14 @@ export function TerminalPanel({
       const apiKey = getApiKey();
       if (apiKey) {
         url += `&apiKey=${encodeURIComponent(apiKey)}`;
+      } else {
+        // In web mode, fetch a short-lived wsToken for secure authentication
+        const wsToken = await fetchWsToken();
+        if (wsToken) {
+          url += `&wsToken=${encodeURIComponent(wsToken)}`;
+        }
+        // Cookies are also sent automatically with same-origin WebSocket
       }
-      // In web mode, cookies are sent automatically with same-origin WebSocket
 
       // Add terminal password token if required
       if (authToken) {
@@ -1164,7 +1204,7 @@ export function TerminalPanel({
         wsRef.current = null;
       }
     };
-  }, [sessionId, authToken, wsUrl, isTerminalReady]);
+  }, [sessionId, authToken, wsUrl, isTerminalReady, fetchWsToken]);
 
   // Handle resize with debouncing
   const handleResize = useCallback(() => {
